@@ -1,0 +1,13 @@
+# python==3.13.7
+langchain-core==0.3.77
+langchain-ollama==0.3.10
+langgraph==0.6.8
+langgraph-checkpoint==2.1.1
+langgraph-prebuilt==0.6.4
+langgraph-sdk==0.2.9
+pdfplumber==0.11.7
+PyMuPDF==1.26.4
+chromadb==1.1.1
+langchain-chroma==0.2.6
+langchain-community==0.3.30
+fastapi==0.118.0
