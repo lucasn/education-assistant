@@ -1,0 +1,287 @@
+const { useState, useEffect, useRef } = React;
+
+const PlusIcon = () => (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="12" y1="5" x2="12" y2="19"></line>
+        <line x1="5" y1="12" x2="19" y2="12"></line>
+    </svg>
+);
+
+const SendIcon = () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="22" y1="2" x2="11" y2="13"></line>
+        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+    </svg>
+);
+
+const MessageIcon = () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+    </svg>
+);
+
+const MenuIcon = () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="3" y1="12" x2="21" y2="12"></line>
+        <line x1="3" y1="6" x2="21" y2="6"></line>
+        <line x1="3" y1="18" x2="21" y2="18"></line>
+    </svg>
+);
+
+const XIcon = () => (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <line x1="18" y1="6" x2="6" y2="18"></line>
+        <line x1="6" y1="6" x2="18" y2="18"></line>
+    </svg>
+);
+
+const AlertIcon = () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <circle cx="12" cy="12" r="10"></circle>
+        <line x1="12" y1="8" x2="12" y2="12"></line>
+        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+    </svg>
+);
+
+function LLMProfessorUI() {
+    const [conversations, setConversations] = useState([]);
+    const [currentThreadId, setCurrentThreadId] = useState(null);
+    const [messages, setMessages] = useState([]);
+    const [input, setInput] = useState('');
+    const [loading, setLoading] = useState(false);
+    const [sidebarOpen, setSidebarOpen] = useState(true);
+    const [checkpointsError, setCheckpointsError] = useState(null);
+    const apiUrl = window.location.origin;
+    const messagesEndRef = useRef(null);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    };
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages]);
+
+    useEffect(() => {
+        fetchConversations();
+    }, []);
+
+    const fetchConversations = async () => {
+        try {
+            setCheckpointsError(null);
+            const response = await fetch(`${apiUrl}/checkpoints`);
+            
+            if (!response.ok) {
+                throw new Error(`Failed to load conversations: ${response.status} ${response.statusText}`);
+            }
+            
+            const data = await response.json();
+            setConversations(data);
+        } catch (error) {
+            console.error('Error fetching conversations:', error);
+            setCheckpointsError(error.message || 'Failed to load conversation history');
+        }
+    };
+
+    const createNewConversation = () => {
+        const newThreadId = self.crypto.randomUUID();
+        setCurrentThreadId(newThreadId);
+        setMessages([]);
+    };
+
+    const selectConversation = (threadId) => {
+        setCurrentThreadId(threadId);
+        setMessages([]);
+    };
+
+    const sendMessage = async () => {
+        if (!input.trim()) return;
+
+        const userMessage = { role: 'user', content: input };
+        setMessages(prev => [...prev, userMessage]);
+        const currentInput = input;
+        setInput('');
+        setLoading(true);
+
+        try {
+            const threadId = currentThreadId || `thread_${Date.now()}`;
+            const response = await fetch(`${apiUrl}/ask`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    threadId: threadId,
+                    question: currentInput,
+                }),
+            });
+
+            const data = await response.json();
+            
+            if (!currentThreadId) {
+                setCurrentThreadId(threadId);
+            }
+
+            const assistantMessage = {
+                role: 'assistant',
+                content: data.answer || data.response || data || 'No response received',
+            };
+            
+            setMessages(prev => [...prev, assistantMessage]);
+            fetchConversations();
+        } catch (error) {
+            console.error('Error sending message:', error);
+            setMessages(prev => [...prev, {
+                role: 'assistant',
+                content: 'Sorry, there was an error processing your request.',
+            }]);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleKeyPress = (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+            e.preventDefault();
+            sendMessage();
+        }
+    };
+
+    return (
+        <div className="flex h-screen bg-gray-900 text-gray-100">
+            <div className={`${sidebarOpen ? 'w-64' : 'w-0'} transition-all duration-300 bg-gray-950 border-r border-gray-800 flex flex-col overflow-hidden`}>
+                <div className="p-4 border-b border-gray-800">
+                    <button
+                        onClick={createNewConversation}
+                        className="w-full flex items-center gap-2 px-4 py-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
+                    >
+                        <PlusIcon />
+                        <span>New Chat</span>
+                    </button>
+                </div>
+                
+                <div className="flex-1 overflow-y-auto p-2">
+                    {checkpointsError ? (
+                        <div className="p-4">
+                            <div className="bg-red-900 bg-opacity-20 border border-red-800 rounded-lg p-3">
+                                <div className="flex items-start gap-2">
+                                    <AlertIcon />
+                                    <div className="flex-1">
+                                        <p className="text-sm font-semibold text-red-400 mb-1">Error Loading History</p>
+                                        <p className="text-xs text-red-300">{checkpointsError}</p>
+                                        <button
+                                            onClick={fetchConversations}
+                                            className="mt-2 text-xs text-red-400 hover:text-red-300 underline"
+                                        >
+                                            Try Again
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    ) : conversations.length === 0 ? (
+                        <div className="p-4 text-center text-gray-500 text-sm">
+                            No conversations yet
+                        </div>
+                    ) : (
+                        conversations.map((conv) => (
+                            <button
+                                key={conv.threadId}
+                                onClick={() => selectConversation(conv.threadId)}
+                                className={`w-full text-left px-4 py-3 rounded-lg mb-1 hover:bg-gray-800 transition-colors flex items-center gap-2 ${
+                                    currentThreadId === conv.threadId ? 'bg-gray-800' : ''
+                                }`}
+                            >
+                                <MessageIcon />
+                                <span className="truncate text-sm">{conv.title || conv.threadId}</span>
+                            </button>
+                        ))
+                    )}
+                </div>
+            </div>
+
+            <div className="flex-1 flex flex-col">
+                <div className="bg-gray-950 border-b border-gray-800 p-4 flex items-center gap-3">
+                    <button
+                        onClick={() => setSidebarOpen(!sidebarOpen)}
+                        className="p-2 hover:bg-gray-800 rounded-lg transition-colors"
+                    >
+                        {sidebarOpen ? <XIcon /> : <MenuIcon />}
+                    </button>
+                    <h1 className="text-xl font-semibold">LLM Professor</h1>
+                </div>
+
+                <div className="flex-1 overflow-y-auto p-4">
+                    {messages.length === 0 ? (
+                        <div className="h-full flex items-center justify-center text-gray-500">
+                            <div className="text-center">
+                                <div className="mx-auto mb-4 opacity-50" style={{ width: '48px', height: '48px' }}>
+                                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                                    </svg>
+                                </div>
+                                <p className="text-lg">Start a conversation with your LLM Professor</p>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="max-w-3xl mx-auto space-y-6">
+                            {messages.map((msg, idx) => (
+                                <div
+                                    key={idx}
+                                    className={`flex gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                                >
+                                    <div
+                                        className={`max-w-[80%] px-4 py-3 rounded-2xl ${
+                                            msg.role === 'user'
+                                                ? 'bg-blue-600 text-white'
+                                                : 'bg-gray-800 text-gray-100'
+                                        }`}
+                                    >
+                                        <p className="whitespace-pre-wrap">{msg.content}</p>
+                                    </div>
+                                </div>
+                            ))}
+                            {loading && (
+                                <div className="flex gap-4 justify-start">
+                                    <div className="bg-gray-800 px-4 py-3 rounded-2xl">
+                                        <div className="flex gap-1">
+                                            <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                                            <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                                            <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                            <div ref={messagesEndRef} />
+                        </div>
+                    )}
+                </div>
+
+                <div className="border-t border-gray-800 p-4 bg-gray-950">
+                    <div className="max-w-3xl mx-auto">
+                        <div className="flex gap-2 bg-gray-800 rounded-2xl p-2">
+                            <textarea
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                onKeyPress={handleKeyPress}
+                                placeholder="Ask your professor anything..."
+                                className="flex-1 bg-transparent px-3 py-2 focus:outline-none resize-none max-h-32"
+                                rows="1"
+                                disabled={loading}
+                            />
+                            <button
+                                onClick={sendMessage}
+                                disabled={loading || !input.trim()}
+                                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-xl transition-colors"
+                            >
+                                <SendIcon />
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+ReactDOM.render(<LLMProfessorUI />, document.getElementById('root'));
