@@ -12,3 +12,4 @@ langchain-chroma==0.2.6
 langchain-community==0.3.30
 fastapi==0.118.0
 langgraph-checkpoint-postgres==2.0.24
+pymongo==4.15.2

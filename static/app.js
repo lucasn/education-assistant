@@ -50,7 +50,7 @@ function LLMProfessorUI() {
     const [input, setInput] = useState('');
     const [loading, setLoading] = useState(false);
     const [sidebarOpen, setSidebarOpen] = useState(true);
-    const [checkpointsError, setCheckpointsError] = useState(null);
+    const [retrieveConversationsError, setRetrieveConversationsError] = useState(null);
     const apiUrl = window.location.origin;
     const messagesEndRef = useRef(null);
 
@@ -68,20 +68,41 @@ function LLMProfessorUI() {
 
     const fetchConversations = async () => {
         try {
-            setCheckpointsError(null);
-            const response = await fetch(`${apiUrl}/checkpoints`);
-            
+            setRetrieveConversationsError(null);
+            const response = await fetch(`${apiUrl}/conversations`);
+
             if (!response.ok) {
                 throw new Error(`Failed to load conversations: ${response.status} ${response.statusText}`);
             }
-            
+
             const data = await response.json();
+
+            if (data.length != 0) {
+                data.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            }
+
             setConversations(data);
         } catch (error) {
             console.error('Error fetching conversations:', error);
-            setCheckpointsError(error.message || 'Failed to load conversation history');
+            setRetrieveConversationsError(error.message || 'Failed to load conversation history');
         }
     };
+
+    const fetchConversation = async (threadId) => {
+        const response = await fetch(`${apiUrl}/conversation/${threadId}`)
+
+        if (!response.ok) {
+            setMessages([{
+                type: 'ai',
+                content: 'Sorry, there was an error processing your request.',
+            }]);
+            throw new Error(`Failed to load conversation with threadId ${threadId}: ${response.status} ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        setMessages(data);
+    }
 
     const createNewConversation = () => {
         const newThreadId = self.crypto.randomUUID();
@@ -91,21 +112,21 @@ function LLMProfessorUI() {
 
     const selectConversation = (threadId) => {
         setCurrentThreadId(threadId);
-        setMessages([]);
+        fetchConversation(threadId);
     };
 
     const sendMessage = async () => {
         if (!input.trim()) return;
 
-        const userMessage = { role: 'user', content: input };
+        const userMessage = { type: 'human', content: input };
         setMessages(prev => [...prev, userMessage]);
         const currentInput = input;
         setInput('');
         setLoading(true);
 
         try {
-            const threadId = currentThreadId || `thread_${Date.now()}`;
-            const response = await fetch(`${apiUrl}/ask`, {
+            const threadId = currentThreadId || self.crypto.randomUUID();
+            const response = await fetch(`${apiUrl}/ask_async`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -116,23 +137,59 @@ function LLMProfessorUI() {
                 }),
             });
 
-            const data = await response.json();
-            
+            // const data = await response.json();
+
             if (!currentThreadId) {
                 setCurrentThreadId(threadId);
             }
 
-            const assistantMessage = {
-                role: 'assistant',
-                content: data.answer || data.response || data || 'No response received',
+            let firstToken = true;
+            let assistantMessage = {
+                type: 'ai',
+                content: '',
             };
-            
-            setMessages(prev => [...prev, assistantMessage]);
+
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+        
+            while (true) {
+                const { done, value } = await reader.read();
+                
+                if (done) {
+                    console.log('Stream complete');
+                    break;
+                }
+        
+                // Decode the chunk
+                const chunk = decoder.decode(value, { stream: true });
+                
+                // Parse SSE format (data: {...}\n\n)
+                const lines = chunk.split('\n');
+                for (const line of lines) {
+                    if (line.startsWith('data: ')) {
+                        const jsonData = line.slice(6); // Remove 'data: ' prefix
+                        try {
+                            const data = JSON.parse(jsonData);
+                            console.log('Received:', data.content);
+                            assistantMessage.content += data.content;
+                            if (firstToken) {
+                                setMessages(prev => [...prev, assistantMessage]);
+                                firstToken = false;
+                            } else {
+                                setMessages(prev => [...prev.slice(0, prev.length - 1), assistantMessage]);
+                            }
+                        } catch (e) {
+                            console.error('Parse error:', e);
+                        }
+                    }
+                }
+            }
+            // setMessages(prev => [...prev, assistantMessage]);
             fetchConversations();
         } catch (error) {
             console.error('Error sending message:', error);
             setMessages(prev => [...prev, {
-                role: 'assistant',
+                type: 'ai',
                 content: 'Sorry, there was an error processing your request.',
             }]);
         } finally {
@@ -159,16 +216,16 @@ function LLMProfessorUI() {
                         <span>New Chat</span>
                     </button>
                 </div>
-                
+
                 <div className="flex-1 overflow-y-auto p-2">
-                    {checkpointsError ? (
+                    {retrieveConversationsError ? (
                         <div className="p-4">
                             <div className="bg-red-900 bg-opacity-20 border border-red-800 rounded-lg p-3">
                                 <div className="flex items-start gap-2">
                                     <AlertIcon />
                                     <div className="flex-1">
                                         <p className="text-sm font-semibold text-red-400 mb-1">Error Loading History</p>
-                                        <p className="text-xs text-red-300">{checkpointsError}</p>
+                                        <p className="text-xs text-red-300">{retrieveConversationsError}</p>
                                         <button
                                             onClick={fetchConversations}
                                             className="mt-2 text-xs text-red-400 hover:text-red-300 underline"
@@ -188,9 +245,8 @@ function LLMProfessorUI() {
                             <button
                                 key={conv.threadId}
                                 onClick={() => selectConversation(conv.threadId)}
-                                className={`w-full text-left px-4 py-3 rounded-lg mb-1 hover:bg-gray-800 transition-colors flex items-center gap-2 ${
-                                    currentThreadId === conv.threadId ? 'bg-gray-800' : ''
-                                }`}
+                                className={`w-full text-left px-4 py-3 rounded-lg mb-1 hover:bg-gray-800 transition-colors flex items-center gap-2 ${currentThreadId === conv.threadId ? 'bg-gray-800' : ''
+                                    }`}
                             >
                                 <MessageIcon />
                                 <span className="truncate text-sm">{conv.title || conv.threadId}</span>
@@ -228,14 +284,13 @@ function LLMProfessorUI() {
                             {messages.map((msg, idx) => (
                                 <div
                                     key={idx}
-                                    className={`flex gap-4 ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                                    className={`flex gap-4 ${msg.type === 'human' ? 'justify-end' : 'justify-start'}`}
                                 >
                                     <div
-                                        className={`max-w-[80%] px-4 py-3 rounded-2xl ${
-                                            msg.role === 'user'
-                                                ? 'bg-blue-600 text-white'
-                                                : 'bg-gray-800 text-gray-100'
-                                        }`}
+                                        className={`max-w-[80%] px-4 py-3 rounded-2xl ${msg.type === 'human'
+                                            ? 'bg-blue-600 text-white'
+                                            : 'bg-gray-800 text-gray-100'
+                                            }`}
                                     >
                                         <p className="whitespace-pre-wrap">{msg.content}</p>
                                     </div>
