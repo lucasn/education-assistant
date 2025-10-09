@@ -1,54 +1,171 @@
-
 import pymupdf
 from langchain_ollama import OllamaEmbeddings
-from langchain_chroma import Chroma
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+from minio import Minio
+from uuid import uuid4
+from io import BytesIO
 from langchain_core.documents import Document
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from pymilvus import MilvusClient, DataType
 
 
-DOCUMENT_PATH = "./data/document.pdf"
 OLLAMA_BASE_URL = "http://localhost:11434"
+MINIO_URL = "127.0.0.1:9000"
+MINIO_ACCESS_KEY = "minioadmin"
+MINIO_SECRET_KEY = "minioadmin"
+FILES_BUCKET_NAME = "files-bucket"
+MILVUS_URL = "http://localhost:19530"
+DOCUMENTS_COLLECTION_NAME = "documents_collection"
+DOCUMENTS_VECTOR_DIMENSION = 1024
+TEXT_SPLITTER_CHUNK_SIZE = 1000
 
-doc = pymupdf.open(DOCUMENT_PATH)
-doc_text = ""
-for i, page in enumerate(doc): 
-    text = page.get_text() 
-    doc_text += text
 
-    # images = page.get_images()
+class FileIngestion:
+    def __init__(self) -> None:
+        self.embedding_model = OllamaEmbeddings(model="qwen3-embedding:0.6b", base_url=OLLAMA_BASE_URL)
+        self.text_splitter = RecursiveCharacterTextSplitter(
+            chunk_size=TEXT_SPLITTER_CHUNK_SIZE, 
+            chunk_overlap=200, 
+            add_start_index=True
+        )
 
-    # if images:
-    #     print(f"Found {len(images)} images on page {i}")
-    # else:
-    #     print("No images found on page", i)
+        self.minio_client = Minio(MINIO_URL,
+            access_key=MINIO_ACCESS_KEY,
+            secret_key=MINIO_SECRET_KEY,
+            secure=False
+        )
 
-    # for j, image in enumerate(images):
-    #     print(f'Image {j}')
-    #     xref = image[0] 
-    #     pix = pymupdf.Pixmap(doc, xref)
+        files_bucket = self.minio_client.bucket_exists(FILES_BUCKET_NAME)
+        if not files_bucket:
+            self.minio_client.make_bucket(FILES_BUCKET_NAME)
+            print("Created bucket", FILES_BUCKET_NAME)
+        else:
+            print("Bucket", FILES_BUCKET_NAME, "already exists")
 
-    #     if pix.n - pix.alpha > 3: 
-    #         pix = pymupdf.Pixmap(pymupdf.csRGB, pix)
+        self.milvus_client = MilvusClient(MILVUS_URL)
 
-    #     pix.save("./data/page_%s-image_%s.png" % (i, j))
-    #     pix = None
+        schema = MilvusClient.create_schema()
+        schema.add_field(
+            field_name="id",
+            datatype=DataType.INT64,
+            is_primary=True,
+            auto_id=True
+        )
+        schema.add_field(
+            field_name="vector",
+            datatype=DataType.FLOAT_VECTOR,
+            dim=DOCUMENTS_VECTOR_DIMENSION
+        )
+        schema.add_field(
+            field_name="text",
+            datatype=DataType.VARCHAR,
+            max_length=2*TEXT_SPLITTER_CHUNK_SIZE
+        )
+        schema.add_field(
+            field_name="file_id",
+            datatype=DataType.VARCHAR,
+            max_length=50
+        )
+        schema.add_field(
+            field_name="keywords",
+            datatype=DataType.ARRAY,
+            element_type=DataType.VARCHAR,
+            max_capacity=200,
+            max_length=512,
+            nullable=True
+        )
 
-print(doc_text)
+        index_params = self.milvus_client.prepare_index_params()
 
-documents = [Document(page_content=doc_text)]
+        index_params.add_index(
+            field_name="text",
+            index_type="AUTOINDEX"
+        )
 
-embeddings = OllamaEmbeddings(model="qwen3-embedding:4b", base_url=OLLAMA_BASE_URL)
+        index_params.add_index(
+            field_name="file_id",
+            index_type="AUTOINDEX"
+        )
 
-vector_store = Chroma(
-    collection_name="example_collection",
-    embedding_function=embeddings,
-    persist_directory="./database",  # Where to save data locally, remove if not necessary
-)
+        index_params.add_index(
+            field_name="vector", 
+            index_type="AUTOINDEX",
+            metric_type="COSINE"
+        )
 
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+        if not self.milvus_client.has_collection(DOCUMENTS_COLLECTION_NAME):
+            self.milvus_client.create_collection(
+                collection_name=DOCUMENTS_COLLECTION_NAME,
+                schema=schema,
+                index_params=index_params
+            )
 
-text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=1000, chunk_overlap=200, add_start_index=True
-)
-all_splits = text_splitter.split_documents(documents)
-_ = vector_store.add_documents(documents=all_splits)
+    def ingest(self, file_bytes, filename):
+        file_id = str(uuid4())
+        metadata = {'filename': filename}
+        self.upload_to_bucket(file_bytes, file_id, metadata)
+
+        text = self.extract_text(file_bytes)
+        pieces, embeddings = self.embed_text(text)
+
+        for piece, embedding in zip(pieces, embeddings):
+            data = {
+                "text": piece,
+                "vector": embedding,
+                "keywords": [],
+                "file_id": file_id
+            }
+            self.milvus_client.insert(collection_name=DOCUMENTS_COLLECTION_NAME, data=data)
+
+    def upload_to_bucket(self, file_bytes, file_id, metadata):
+        self.minio_client.put_object(FILES_BUCKET_NAME, file_id, BytesIO(file_bytes), len(file_bytes), metadata=metadata)
+
+    def extract_text(self, file_bytes):
+        document = pymupdf.Document(stream=file_bytes)
+        text = ""
+        for page in document:
+            text += page.get_text()
+
+        return text
+
+    def embed_text(self, text):
+        splits = self.text_splitter.split_documents([Document(page_content=text)])
+        text_splits = [split.page_content for split in splits]
+        embeddings = self.embedding_model.embed_documents(text_splits)
+
+        return text_splits, embeddings
+
+    
+
+if __name__ == '__main__':
+    FileIngestion()
+
+
+
+# documents = [Document(page_content=doc_text)]
+
+# text_splitter = RecursiveCharacterTextSplitter(
+#     chunk_size=1000, chunk_overlap=200, add_start_index=True
+# )
+# all_splits = text_splitter.split_documents(documents)
+# print(len(all_splits))
+# print(all_splits)
+
+# embeddings = OllamaEmbeddings(model="qwen3-embedding:0.6b", base_url=OLLAMA_BASE_URL)
+
+# response = embeddings.embed_documents([doc.page_content for doc in all_splits])
+# print(len(response))
+# print(len(response[0]))
+
+# vector_store = Chroma(
+#     collection_name="example_collection",
+#     embedding_function=embeddings,
+#     persist_directory="./database",  # Where to save data locally, remove if not necessary
+# )
+
+# from langchain_text_splitters import RecursiveCharacterTextSplitter
+
+# text_splitter = RecursiveCharacterTextSplitter(
+#     chunk_size=1000, chunk_overlap=200, add_start_index=True
+# )
+# all_splits = text_splitter.split_documents(documents)
+# _ = vector_store.add_documents(documents=all_splits)

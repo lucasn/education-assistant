@@ -10,3 +10,7 @@ You are a title generator. Read the first message from the user and create a sho
   - User: "Hello" -> Title: "User greeting"
 Output only the title, nothing else.
 """
+
+MAIN_MODEL_PROMPT = """
+"You are a helpful assistant. Give a short answer."
+"""

@@ -1,21 +1,22 @@
 from langchain_ollama import ChatOllama
 from langgraph.prebuilt import create_react_agent
 from fastapi import FastAPI
+from fastapi import UploadFile, File, HTTPException
 from pydantic import BaseModel
 import uvicorn
 from langgraph.checkpoint.postgres import PostgresSaver
-from langgraph.checkpoint.memory import InMemorySaver
 from contextlib import asynccontextmanager
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pymongo import MongoClient
-from prompts import CONVERSATION_TITLE_PROMPT
+from prompts import CONVERSATION_TITLE_PROMPT, MAIN_MODEL_PROMPT
 from datetime import datetime
 from langchain_core.messages import AIMessageChunk
 import json
 from fastapi.responses import StreamingResponse
 import asyncio
+from ingest import FileIngestion
 
 OLLAMA_BASE_URL = "http://localhost:11434"
 API_PORT = 8080
@@ -25,16 +26,21 @@ MONGO_URL = "mongodb://root:root@localhost:27017"
 
 class AppContext:
     def __init__(self):
-        self.model = None
-        self.title_generation_model = None
-        self.database_client = None
-        self.database_collection = None
+        pass
+
+    def create_app_context(self):
+        self.main_model = ChatOllama(model='llama3.2:3b', temperature=0, base_url=OLLAMA_BASE_URL)
+        self.title_generation_model = ChatOllama(model='llama3.2:3b', base_url=OLLAMA_BASE_URL)
+
+        self.title_database_client = MongoClient(MONGO_URL)
+        self.title_database = self.title_database_client["education"]
+        self.title_database_collection = self.title_database["education_data"]
 
     def agent(self, checkpointer):
         return create_react_agent(
-            model=context.model,
+            model=self.main_model,
             tools=[],
-            prompt="You are a helpful assistant. Give a short answer.",
+            prompt=MAIN_MODEL_PROMPT,
             checkpointer=checkpointer
         )
 
@@ -49,14 +55,11 @@ context = AppContext()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    context.model = ChatOllama(model='llama3.2:3b', temperature=0, base_url=OLLAMA_BASE_URL)
-    context.title_generation_model = ChatOllama(model='llama3.2:3b', base_url=OLLAMA_BASE_URL)
+    context.create_app_context()
+
     with context.checkpointer() as checkpointer:
         checkpointer.setup()
-    
-    context.database_client = MongoClient(MONGO_URL)
-    db = context.database_client["education"]
-    context.database_collection = db["education_data"]
+
     yield
   
 
@@ -76,9 +79,26 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 def retrieve_index():
     return FileResponse("static/index.html")
 
+
+@app.post("/ingest")
+async def ingest(files: list[UploadFile] = File(...)):
+    if not files:
+        raise HTTPException(status_code=400, detail="No files uploaded")
+
+    for file in files:
+        content_type = (file.content_type or "").lower()
+        if content_type not in {"application/pdf", "application/x-pdf", "application/octet-stream"} and not file.filename.lower().endswith(".pdf"):
+            raise HTTPException(status_code=400, detail=f"Unsupported file type for {file.filename}. Only PDF is allowed.")
+
+        file_bytes = await file.read()
+        file_ingestion = FileIngestion()
+        file_ingestion.ingest(file_bytes, file.filename)
+
+    return 200
+
 @app.post("/ask")
 def ask_assistant(askRequest: AskRequest):
-    db_cursor = context.database_collection.find({"threadId": askRequest.threadId})
+    db_cursor = context.title_database_collection.find({"threadId": askRequest.threadId})
     mongo_documents = [doc for doc in db_cursor]
     print(mongo_documents)
 
@@ -93,7 +113,7 @@ def ask_assistant(askRequest: AskRequest):
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        context.database_collection.insert_one({"threadId": askRequest.threadId, "title": title, "timestamp": timestamp})
+        context.title_database_collection.insert_one({"threadId": askRequest.threadId, "title": title, "timestamp": timestamp})
 
     with context.checkpointer() as checkpointer:
         agent = context.agent(checkpointer)
@@ -106,7 +126,7 @@ def ask_assistant(askRequest: AskRequest):
 
 @app.post("/ask_async")
 async def ask_assistant_async(askRequest: AskRequest):
-    db_cursor = context.database_collection.find({"threadId": askRequest.threadId})
+    db_cursor = context.title_database_collection.find({"threadId": askRequest.threadId})
     mongo_documents = [doc for doc in db_cursor]
     print(mongo_documents)
 
@@ -121,7 +141,7 @@ async def ask_assistant_async(askRequest: AskRequest):
 
         timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        context.database_collection.insert_one({"threadId": askRequest.threadId, "title": title, "timestamp": timestamp})
+        context.title_database_collection.insert_one({"threadId": askRequest.threadId, "title": title, "timestamp": timestamp})
 
     async def generate():
         with context.checkpointer() as checkpointer:
@@ -134,43 +154,16 @@ async def ask_assistant_async(askRequest: AskRequest):
             for chunk in response_stream:
                 message = chunk[0]
                 if isinstance(message, AIMessageChunk):
-                    print(message.content)
                     yield f"data: {json.dumps({"content": message.content})}\n\n"
                     await asyncio.sleep(0)
                 else:
                     print(f"Unknown object in stream: {message}")
     
     return StreamingResponse(generate(), media_type="text/event-stream")
-            
-
-# @app.post("/test")
-# async def ask_assistant(askRequest: AskRequest):
-#     async def generate():
-#         agent = create_react_agent(
-#             model=context.model,
-#             tools=[],
-#             prompt="You are a helpful assistant.",
-#             checkpointer=InMemorySaver()
-#         )
-
-#         response_stream = agent.stream(
-#             {"messages": [{"role": "user", "content": askRequest.question}]},
-#             config={"configurable": {"thread_id": askRequest.threadId}},
-#             stream_mode="messages"
-#         )
-        
-#         for chunk in response_stream:
-#             message = chunk[0]
-#             if isinstance(message, AIMessageChunk):
-#                 yield f"data: {json.dumps({"content": message.content})}\n\n"
-#             else:
-#                 print(f"Unknown object in stream: {message}")
-    
-#     return StreamingResponse(generate(), media_type="text/event-stream")
 
 @app.get("/conversations")
 def retrieve_conversations():
-    db_cursor = context.database_collection.find()
+    db_cursor = context.title_database_collection.find()
     conversations = [{"threadId": doc["threadId"], "title": doc["title"], "timestamp": doc["timestamp"]} for doc in db_cursor]
     return conversations
 
