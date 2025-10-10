@@ -3,13 +3,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+from langchain_core.messages import AIMessage, HumanMessage
 
 import uvicorn
-from datetime import datetime
 
 from models import AppContext, Assistant, AskRequest
-from ingest import FileIngestion
+from data_processing import FileIngestion
 
+
+API_PORT = 8080
+API_HOST = "localhost"
 
 context = AppContext()
 
@@ -54,13 +57,13 @@ async def ingest(files: list[UploadFile] = File(...)):
 
     return 200
 
-@app.post("/ask")
-def ask_assistant(askRequest: AskRequest):
-    if not context.is_existent_conversation(askRequest.threadId):
-        context.create_title_for_conversation(askRequest.threadId, askRequest.question)
+# @app.post("/ask")
+# def ask_assistant(askRequest: AskRequest):
+#     if not context.is_existent_conversation(askRequest.threadId):
+#         context.create_title_for_conversation(askRequest.threadId, askRequest.question)
     
-    response = context.assistant.invoke(askRequest.question, askRequest.threadId)
-    return response
+#     response = context.assistant.invoke(askRequest.question, askRequest.threadId)
+#     return response
 
 
 @app.post("/ask_async")
@@ -87,7 +90,29 @@ def retrieve_conversation(threadId: str):
         checkpoint = checkpoint_tuple.checkpoint
         channel_values = checkpoint.get("channel_values") or {}
         messages = channel_values.get("messages") or []
-        return messages
+        cleaned_messages = []
+        stored_context = None
+        for message in messages:
+            json_message = {"content": message.content}
+
+            if not stored_context is None:
+                json_message["context"] = stored_context
+                stored_context = None
+
+            if isinstance(message, AIMessage):
+                json_message["type"] = "ai"
+            else:
+                json_message["type"] = "human"
+
+            if metadata := message.additional_kwargs.get("metadata"):
+                stored_context = metadata["context"]
+
+                if user_query := metadata.get("query"):
+                    json_message["content"] = user_query
+
+            cleaned_messages.append(json_message)
+
+        return cleaned_messages
 
 
 

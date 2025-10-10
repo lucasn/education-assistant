@@ -136,14 +136,14 @@ class FileIngestion:
         return text_splits, embeddings
 
 
-class Search:
+class VectorialSearch:
     def __init__(self) -> None:
         self.embedding_model = OllamaEmbeddings(model=EMBEDDING_MODEL, base_url=OLLAMA_BASE_URL)
         self.milvus_client = MilvusClient(MILVUS_URL)
     
     def search(self, query, top_k=3):
         embedding = self.embedding_model.embed_query(query)
-        res = self.milvus_client.search(
+        documents = self.milvus_client.search(
             collection_name=DOCUMENTS_COLLECTION_NAME,
             anns_field="vector",
             data=[embedding],
@@ -152,9 +152,16 @@ class Search:
             output_fields=["text", "file_id", "keywords"]
         )
 
-        print(res[0][0]['entity']['text'])
+        return [ {
+            "id": entry["id"],
+            "distance": entry["distance"],
+            "text": entry["entity"]["text"],
+            "keywords": entry["entity"]["keywords"],
+            "file_id": entry["entity"]["file_id"]
+
+        } for entry in documents[0] ]
 
 if __name__ == '__main__':
     # FileIngestion()
-    search = Search()
-    search.search("What was the first model adapted to UML?")
+    search = VectorialSearch()
+    print(search.search("What was the first model adapted to UML?"))

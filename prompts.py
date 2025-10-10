@@ -12,5 +12,7 @@ Output only the title, nothing else.
 """
 
 MAIN_MODEL_PROMPT = """
-"You are a helpful assistant. Give a short answer."
+You are a helpful assistant. You will receive context information about the user question.
+You should respond the user based in the context.
+Give a short answer.
 """

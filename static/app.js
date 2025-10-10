@@ -43,6 +43,58 @@ const AlertIcon = () => (
     </svg>
 );
 
+const ChevronDownIcon = () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="6,9 12,15 18,9"></polyline>
+    </svg>
+);
+
+const ChevronUpIcon = () => (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <polyline points="18,15 12,9 6,15"></polyline>
+    </svg>
+);
+
+const MessageBubble = ({idx, message}) => {
+    const [contextExpanded, setContextExpanded] = useState(false);
+    
+    return (
+        <div
+            key={idx}
+            className={`flex gap-4 ${message.type === 'human' ? 'justify-end' : 'justify-start'}`}
+        >
+            <div
+                className={`max-w-[80%] px-4 py-3 rounded-2xl ${message.type === 'human'
+                    ? 'bg-blue-600 text-white'
+                    : 'bg-gray-800 text-gray-100'
+                    }`}
+            >
+                <p className="whitespace-pre-wrap">{message.content}</p>
+                
+                {/* Context section - only show for AI messages with context */}
+                {message.type === 'ai' && message.context && (
+                    <div className="mt-3 pt-3 border-t border-gray-600">
+                        <button
+                            onClick={() => setContextExpanded(!contextExpanded)}
+                            className="flex items-center gap-2 text-sm text-gray-300 hover:text-gray-100 transition-colors"
+                        >
+                            {contextExpanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
+                            {/* <span>Context ({message.context.length} characters)</span> */}
+                            <span>Context</span>
+                        </button>
+                        
+                        {contextExpanded && (
+                            <div className="mt-2 p-3 bg-gray-700 rounded-lg text-sm text-gray-200 max-h-48 overflow-y-auto">
+                                <p className="whitespace-pre-wrap">{message.context}</p>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        </div>
+    )
+}
+
 function LLMProfessorUI() {
     const [conversations, setConversations] = useState([]);
     const [currentThreadId, setCurrentThreadId] = useState(null);
@@ -101,6 +153,8 @@ function LLMProfessorUI() {
 
         const data = await response.json();
 
+        console.log(data)
+
         setMessages(data);
     }
 
@@ -147,6 +201,7 @@ function LLMProfessorUI() {
             let assistantMessage = {
                 type: 'ai',
                 content: '',
+                context: ''
             };
 
             const reader = response.body.getReader();
@@ -170,8 +225,13 @@ function LLMProfessorUI() {
                         const jsonData = line.slice(6); // Remove 'data: ' prefix
                         try {
                             const data = JSON.parse(jsonData);
-                            console.log('Received:', data.content);
-                            assistantMessage.content += data.content;
+                            // console.log('Received:', data.content);
+                            if (data.content) {
+                                assistantMessage.content += data.content;
+                            }
+                            if (data.context) {
+                                assistantMessage.context += data.context;
+                            }
                             if (firstToken) {
                                 setMessages(prev => [...prev, assistantMessage]);
                                 firstToken = false;
@@ -282,19 +342,7 @@ function LLMProfessorUI() {
                     ) : (
                         <div className="max-w-3xl mx-auto space-y-6">
                             {messages.map((msg, idx) => (
-                                <div
-                                    key={idx}
-                                    className={`flex gap-4 ${msg.type === 'human' ? 'justify-end' : 'justify-start'}`}
-                                >
-                                    <div
-                                        className={`max-w-[80%] px-4 py-3 rounded-2xl ${msg.type === 'human'
-                                            ? 'bg-blue-600 text-white'
-                                            : 'bg-gray-800 text-gray-100'
-                                            }`}
-                                    >
-                                        <p className="whitespace-pre-wrap">{msg.content}</p>
-                                    </div>
-                                </div>
+                                <MessageBubble idx={idx} message={msg}/>
                             ))}
                             {loading && (
                                 <div className="flex gap-4 justify-start">

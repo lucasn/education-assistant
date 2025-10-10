@@ -6,13 +6,13 @@ from langgraph.prebuilt import create_react_agent
 from pydantic import BaseModel
 from langchain_core.messages import AIMessageChunk
 
+from data_processing import VectorialSearch
+
 import asyncio
 import json
 from datetime import datetime
 
 OLLAMA_BASE_URL = "http://localhost:11434"
-API_PORT = 8080
-API_HOST = "localhost"
 POSTGRES_URL = "postgresql://root:root@localhost:5432/checkpoint"
 MONGO_URL = "mongodb://root:root@localhost:27017"
 
@@ -50,7 +50,8 @@ class AppContext:
 class Assistant:
     def __init__(self) -> None:
         self.model = ChatOllama(model='llama3.2:3b', temperature=0, base_url=OLLAMA_BASE_URL) 
-        
+        self.search_engine = VectorialSearch()
+
     @staticmethod
     def checkpointer():
         return PostgresSaver.from_conn_string(POSTGRES_URL)
@@ -63,31 +64,44 @@ class Assistant:
             checkpointer=checkpointer
         )
         
-    def create_messages(self, query):
-        return {"messages": [{"role": "user", "content": query}]}
+    def create_messages(self, query, context):
+        return {"messages": [{
+            "role": "user", 
+            "content": f"Context: {context}\n\nUser Question: {query}",
+            "metadata": {"context": context, "query": query}
+            }]}
 
-    
-    def invoke(self, query, thread_id):
-        with Assistant.checkpointer() as checkpointer:
-            agent = self.create_agent(checkpointer)
-            messages = self.create_messages(query)
+    def retrieve_context(self, query):
+        documents = self.search_engine.search(query)
 
-            response = agent.invoke(
-                messages,
-                config={"configurable": {"thread_id": thread_id}}
-            )
-            return response["messages"][-1].content
+        return "\n\n".join([entry["text"] for entry in documents])
+
+    # def invoke(self, query, thread_id):
+    #     with Assistant.checkpointer() as checkpointer:
+    #         agent = self.create_agent(checkpointer)
+    #         context = self.retrieve_context(query)
+    #         messages = self.create_messages(query, context)
+
+    #         response = agent.invoke(
+    #             messages,
+    #             config={"configurable": {"thread_id": thread_id}}
+    #         )
+    #         return response["messages"][-1].content
 
     async def ainvoke(self, query, thread_id):
         with Assistant.checkpointer() as checkpointer:
             agent = self.create_agent(checkpointer)
-            messages = self.create_messages(query)
+            context = self.retrieve_context(query)
+            messages = self.create_messages(query, context)
 
             response_stream = agent.stream(
                 messages,
                 config={"configurable": {"thread_id": thread_id}},
                 stream_mode="messages"
             )
+
+            yield f"data: {json.dumps({"context": context})}\n\n"
+
             for chunk in response_stream:
                 message = chunk[0]
                 if isinstance(message, AIMessageChunk):
