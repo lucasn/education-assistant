@@ -1,67 +1,26 @@
-from langchain_ollama import ChatOllama
-from langgraph.prebuilt import create_react_agent
-from fastapi import FastAPI
-from fastapi import UploadFile, File, HTTPException
-from pydantic import BaseModel
-import uvicorn
-from langgraph.checkpoint.postgres import PostgresSaver
-from contextlib import asynccontextmanager
+from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pymongo import MongoClient
-from prompts import CONVERSATION_TITLE_PROMPT, MAIN_MODEL_PROMPT
+from contextlib import asynccontextmanager
+
+import uvicorn
 from datetime import datetime
-from langchain_core.messages import AIMessageChunk
-import json
-from fastapi.responses import StreamingResponse
-import asyncio
+
+from models import AppContext, Assistant, AskRequest
 from ingest import FileIngestion
 
-OLLAMA_BASE_URL = "http://localhost:11434"
-API_PORT = 8080
-API_HOST = "localhost"
-POSTGRES_URL = "postgresql://root:root@localhost:5432/checkpoint"
-MONGO_URL = "mongodb://root:root@localhost:27017"
-
-class AppContext:
-    def __init__(self):
-        pass
-
-    def create_app_context(self):
-        self.main_model = ChatOllama(model='llama3.2:3b', temperature=0, base_url=OLLAMA_BASE_URL)
-        self.title_generation_model = ChatOllama(model='llama3.2:3b', base_url=OLLAMA_BASE_URL)
-
-        self.title_database_client = MongoClient(MONGO_URL)
-        self.title_database = self.title_database_client["education"]
-        self.title_database_collection = self.title_database["education_data"]
-
-    def agent(self, checkpointer):
-        return create_react_agent(
-            model=self.main_model,
-            tools=[],
-            prompt=MAIN_MODEL_PROMPT,
-            checkpointer=checkpointer
-        )
-
-    def checkpointer(self):
-        return PostgresSaver.from_conn_string(POSTGRES_URL)
-
-class AskRequest(BaseModel):
-    threadId: str
-    question: str
 
 context = AppContext()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    context.create_app_context()
+    context.build()
 
-    with context.checkpointer() as checkpointer:
+    with Assistant.checkpointer() as checkpointer:
         checkpointer.setup()
 
     yield
-  
 
 app = FastAPI(lifespan=lifespan)
 
@@ -78,7 +37,6 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 @app.get("/")
 def retrieve_index():
     return FileResponse("static/index.html")
-
 
 @app.post("/ingest")
 async def ingest(files: list[UploadFile] = File(...)):
@@ -98,68 +56,21 @@ async def ingest(files: list[UploadFile] = File(...)):
 
 @app.post("/ask")
 def ask_assistant(askRequest: AskRequest):
-    db_cursor = context.title_database_collection.find({"threadId": askRequest.threadId})
-    mongo_documents = [doc for doc in db_cursor]
-    print(mongo_documents)
+    if not context.is_existent_conversation(askRequest.threadId):
+        context.create_title_for_conversation(askRequest.threadId, askRequest.question)
+    
+    response = context.assistant.invoke(askRequest.question, askRequest.threadId)
+    return response
 
-    if len(mongo_documents) == 0:
-        title_creation_response = context.title_generation_model.invoke([
-            {"role": "system", "content": CONVERSATION_TITLE_PROMPT},
-            {"role": "user", "content": f"{askRequest.question}"}
-        ])
-
-        title = title_creation_response.content
-        print(title)
-
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        context.title_database_collection.insert_one({"threadId": askRequest.threadId, "title": title, "timestamp": timestamp})
-
-    with context.checkpointer() as checkpointer:
-        agent = context.agent(checkpointer)
-        response = agent.invoke(
-            {"messages": [{"role": "user", "content": askRequest.question}]},
-            config={"configurable": {"thread_id": askRequest.threadId}}
-        )
-        print(response)
-        return response["messages"][-1].content
 
 @app.post("/ask_async")
 async def ask_assistant_async(askRequest: AskRequest):
-    db_cursor = context.title_database_collection.find({"threadId": askRequest.threadId})
-    mongo_documents = [doc for doc in db_cursor]
-    print(mongo_documents)
+    if not context.is_existent_conversation(askRequest.threadId):
+        context.create_title_for_conversation(askRequest.threadId, askRequest.question)
 
-    if len(mongo_documents) == 0:
-        title_creation_response = context.title_generation_model.invoke([
-            {"role": "system", "content": CONVERSATION_TITLE_PROMPT},
-            {"role": "user", "content": f"{askRequest.question}"}
-        ])
+    generator = context.assistant.ainvoke(askRequest.question, askRequest.threadId)
 
-        title = title_creation_response.content
-        print(title)
-
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-        context.title_database_collection.insert_one({"threadId": askRequest.threadId, "title": title, "timestamp": timestamp})
-
-    async def generate():
-        with context.checkpointer() as checkpointer:
-            agent = context.agent(checkpointer)
-            response_stream = agent.stream(
-                {"messages": [{"role": "user", "content": askRequest.question}]},
-                config={"configurable": {"thread_id": askRequest.threadId}},
-                stream_mode="messages"
-            )
-            for chunk in response_stream:
-                message = chunk[0]
-                if isinstance(message, AIMessageChunk):
-                    yield f"data: {json.dumps({"content": message.content})}\n\n"
-                    await asyncio.sleep(0)
-                else:
-                    print(f"Unknown object in stream: {message}")
-    
-    return StreamingResponse(generate(), media_type="text/event-stream")
+    return StreamingResponse(generator, media_type="text/event-stream")
 
 @app.get("/conversations")
 def retrieve_conversations():
@@ -169,7 +80,7 @@ def retrieve_conversations():
 
 @app.get("/conversation/{threadId}")
 def retrieve_conversation(threadId: str):
-    with context.checkpointer() as checkpointer:
+    with Assistant.checkpointer() as checkpointer:
         checkpoint_tuple = checkpointer.get_tuple({"configurable": {"thread_id": threadId}})
         if checkpoint_tuple is None:
             return []

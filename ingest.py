@@ -9,6 +9,7 @@ from pymilvus import MilvusClient, DataType
 
 
 OLLAMA_BASE_URL = "http://localhost:11434"
+EMBEDDING_MODEL = "qwen3-embedding:0.6b"
 MINIO_URL = "127.0.0.1:9000"
 MINIO_ACCESS_KEY = "minioadmin"
 MINIO_SECRET_KEY = "minioadmin"
@@ -21,7 +22,7 @@ TEXT_SPLITTER_CHUNK_SIZE = 1000
 
 class FileIngestion:
     def __init__(self) -> None:
-        self.embedding_model = OllamaEmbeddings(model="qwen3-embedding:0.6b", base_url=OLLAMA_BASE_URL)
+        self.embedding_model = OllamaEmbeddings(model=EMBEDDING_MODEL, base_url=OLLAMA_BASE_URL)
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=TEXT_SPLITTER_CHUNK_SIZE, 
             chunk_overlap=200, 
@@ -134,38 +135,26 @@ class FileIngestion:
 
         return text_splits, embeddings
 
+
+class Search:
+    def __init__(self) -> None:
+        self.embedding_model = OllamaEmbeddings(model=EMBEDDING_MODEL, base_url=OLLAMA_BASE_URL)
+        self.milvus_client = MilvusClient(MILVUS_URL)
     
+    def search(self, query, top_k=3):
+        embedding = self.embedding_model.embed_query(query)
+        res = self.milvus_client.search(
+            collection_name=DOCUMENTS_COLLECTION_NAME,
+            anns_field="vector",
+            data=[embedding],
+            limit=top_k,
+            search_params={"metric_type": "COSINE"},
+            output_fields=["text", "file_id", "keywords"]
+        )
+
+        print(res[0][0]['entity']['text'])
 
 if __name__ == '__main__':
-    FileIngestion()
-
-
-
-# documents = [Document(page_content=doc_text)]
-
-# text_splitter = RecursiveCharacterTextSplitter(
-#     chunk_size=1000, chunk_overlap=200, add_start_index=True
-# )
-# all_splits = text_splitter.split_documents(documents)
-# print(len(all_splits))
-# print(all_splits)
-
-# embeddings = OllamaEmbeddings(model="qwen3-embedding:0.6b", base_url=OLLAMA_BASE_URL)
-
-# response = embeddings.embed_documents([doc.page_content for doc in all_splits])
-# print(len(response))
-# print(len(response[0]))
-
-# vector_store = Chroma(
-#     collection_name="example_collection",
-#     embedding_function=embeddings,
-#     persist_directory="./database",  # Where to save data locally, remove if not necessary
-# )
-
-# from langchain_text_splitters import RecursiveCharacterTextSplitter
-
-# text_splitter = RecursiveCharacterTextSplitter(
-#     chunk_size=1000, chunk_overlap=200, add_start_index=True
-# )
-# all_splits = text_splitter.split_documents(documents)
-# _ = vector_store.add_documents(documents=all_splits)
+    # FileIngestion()
+    search = Search()
+    search.search("What was the first model adapted to UML?")
