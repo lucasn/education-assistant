@@ -57,21 +57,13 @@ async def ingest(files: list[UploadFile] = File(...)):
 
     return 200
 
-# @app.post("/ask")
-# def ask_assistant(askRequest: AskRequest):
-#     if not context.is_existent_conversation(askRequest.threadId):
-#         context.create_title_for_conversation(askRequest.threadId, askRequest.question)
-    
-#     response = context.assistant.invoke(askRequest.question, askRequest.threadId)
-#     return response
-
 
 @app.post("/ask_async")
 async def ask_assistant_async(askRequest: AskRequest):
     if not context.is_existent_conversation(askRequest.threadId):
         context.create_title_for_conversation(askRequest.threadId, askRequest.question)
 
-    generator = context.assistant.ainvoke(askRequest.question, askRequest.threadId)
+    generator = context.assistant.ainvoke_graph(askRequest.question, askRequest.threadId)
 
     return StreamingResponse(generator, media_type="text/event-stream")
 
@@ -83,36 +75,8 @@ def retrieve_conversations():
 
 @app.get("/conversation/{threadId}")
 def retrieve_conversation(threadId: str):
-    with Assistant.checkpointer() as checkpointer:
-        checkpoint_tuple = checkpointer.get_tuple({"configurable": {"thread_id": threadId}})
-        if checkpoint_tuple is None:
-            return []
-        checkpoint = checkpoint_tuple.checkpoint
-        channel_values = checkpoint.get("channel_values") or {}
-        messages = channel_values.get("messages") or []
-        cleaned_messages = []
-        stored_context = None
-        for message in messages:
-            json_message = {"content": message.content}
-
-            if not stored_context is None:
-                json_message["context"] = stored_context
-                stored_context = None
-
-            if isinstance(message, AIMessage):
-                json_message["type"] = "ai"
-            else:
-                json_message["type"] = "human"
-
-            if metadata := message.additional_kwargs.get("metadata"):
-                stored_context = metadata["context"]
-
-                if user_query := metadata.get("query"):
-                    json_message["content"] = user_query
-
-            cleaned_messages.append(json_message)
-
-        return cleaned_messages
+    config = {"configurable": {"thread_id": threadId}}
+    return context.assistant.get_conversation(config)
 
 
 

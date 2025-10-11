@@ -72,7 +72,7 @@ const MessageBubble = ({idx, message}) => {
                 <p className="whitespace-pre-wrap">{message.content}</p>
                 
                 {/* Context section - only show for AI messages with context */}
-                {message.type === 'ai' && message.context && (
+                {message.type === 'ai' && message.additional_kwargs && message.additional_kwargs.context && (
                     <div className="mt-3 pt-3 border-t border-gray-600">
                         <button
                             onClick={() => setContextExpanded(!contextExpanded)}
@@ -85,7 +85,7 @@ const MessageBubble = ({idx, message}) => {
                         
                         {contextExpanded && (
                             <div className="mt-2 p-3 bg-gray-700 rounded-lg text-sm text-gray-200 max-h-48 overflow-y-auto">
-                                <p className="whitespace-pre-wrap">{message.context}</p>
+                                <p className="whitespace-pre-wrap">{message.additional_kwargs.context}</p>
                             </div>
                         )}
                     </div>
@@ -153,9 +153,9 @@ function LLMProfessorUI() {
 
         const data = await response.json();
 
-        console.log(data)
+        const messages = data[0].messages.filter((m) => m.type === "human" || m.type == "ai");
 
-        setMessages(data);
+        setMessages(messages);
     }
 
     const createNewConversation = () => {
@@ -201,7 +201,7 @@ function LLMProfessorUI() {
             let assistantMessage = {
                 type: 'ai',
                 content: '',
-                context: ''
+                additional_kwargs: {context: ''}
             };
 
             const reader = response.body.getReader();
@@ -229,8 +229,9 @@ function LLMProfessorUI() {
                             if (data.content) {
                                 assistantMessage.content += data.content;
                             }
-                            if (data.context) {
-                                assistantMessage.context += data.context;
+                            if (data.additional_kwargs) {
+                                assistantMessage.additional_kwargs.context = data.additional_kwargs.context;
+                                // console.log(data.additional_kwargs)
                             }
                             if (firstToken) {
                                 setMessages(prev => [...prev, assistantMessage]);
@@ -244,6 +245,8 @@ function LLMProfessorUI() {
                     }
                 }
             }
+            
+            fetchConversation(threadId);
             // setMessages(prev => [...prev, assistantMessage]);
             fetchConversations();
         } catch (error) {
