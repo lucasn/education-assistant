@@ -6,6 +6,7 @@ from uuid import uuid4
 from io import BytesIO
 from langchain_core.documents import Document
 from pymilvus import MilvusClient, DataType
+from unstructured.partition.auto import partition
 
 
 OLLAMA_BASE_URL = "http://localhost:11434"
@@ -121,12 +122,21 @@ class FileIngestion:
         self.minio_client.put_object(FILES_BUCKET_NAME, file_id, BytesIO(file_bytes), len(file_bytes), metadata=metadata)
 
     def extract_text(self, file_bytes):
-        document = pymupdf.Document(stream=file_bytes)
-        text = ""
-        for page in document:
-            text += page.get_text()
-
-        return text
+        try:
+            print("Ingesting with unstructured")
+            elements = partition(file=BytesIO(file_bytes), content_type="application/pdf", languages=["por", "eng"])
+            text = ""
+            for element in elements:
+                text += f"\n{str(element)}"
+        except Exception as error:
+            print(f"Error while ingesting with unstructured: {error}")
+            print("Ingesting with PyMuPDF")
+            document = pymupdf.Document(stream=file_bytes)
+            text = ""
+            for page in document:
+                text += page.get_text()
+        finally:
+            return text
 
     def embed_text(self, text):
         splits = self.text_splitter.split_documents([Document(page_content=text)])
@@ -162,6 +172,7 @@ class VectorialSearch:
         } for entry in documents[0] ]
 
 if __name__ == '__main__':
-    # FileIngestion()
-    search = VectorialSearch()
-    print(search.search("What was the first model adapted to UML?"))
+
+    ingestion = FileIngestion()
+    with open("./data/chapter1.pdf", mode='rb') as f:
+        print(ingestion.extract_text(f.read()))
