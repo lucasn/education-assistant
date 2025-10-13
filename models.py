@@ -12,6 +12,7 @@ from langgraph.graph import StateGraph, START, END
 from prompts import MAIN_MODEL_PROMPT
 
 from data_processing import VectorialSearch
+from toolbox import retrieve_difficulties, register_difficulty
 
 import asyncio
 import json
@@ -26,7 +27,8 @@ class AppContext:
         pass
 
     def build(self):
-        self.main_model = ChatOllama(model='llama3.2:3b', temperature=0, base_url=OLLAMA_BASE_URL)
+        self.main_model = ChatOllama(model='llama3.2:3b', temperature=0, base_url=OLLAMA_BASE_URL) \
+            .bind_tools([retrieve_difficulties, register_difficulty])
         self.title_generation_model = ChatOllama(model='llama3.2:3b', base_url=OLLAMA_BASE_URL)
 
         self.title_database_client = MongoClient(MONGO_URL)
