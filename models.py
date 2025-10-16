@@ -27,8 +27,8 @@ class AppContext:
         pass
 
     def build(self):
-        self.main_model = ChatOllama(model='llama3.2:3b', temperature=0, base_url=OLLAMA_BASE_URL) \
-            .bind_tools([retrieve_difficulties, register_difficulty])
+        self.main_model = ChatOllama(model='llama3.2:3b', temperature=0, base_url=OLLAMA_BASE_URL)
+            # .bind_tools([retrieve_difficulties, register_difficulty])
         self.title_generation_model = ChatOllama(model='llama3.2:3b', base_url=OLLAMA_BASE_URL)
 
         self.title_database_client = MongoClient(MONGO_URL)
@@ -174,6 +174,7 @@ class Assistant:
         with Assistant.checkpointer() as checkpointer:
             graph = self.graph_builder.compile(checkpointer=checkpointer)
             return graph.get_state(config)
+        
 
 class AskRequest(BaseModel):
     threadId: str
