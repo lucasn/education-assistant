@@ -1,56 +1,15 @@
-from pymilvus import MilvusClient, DataType
 from typing import Annotated
 from langchain_core.tools import tool
-from langchain_core.messages import ToolMessage, ToolCall
+from langchain_core.messages import ToolMessage
 from langchain_ollama import OllamaEmbeddings
-from langchain_core.messages.tool import tool_call
+from agents.question_generator import QuestionGeneratorAgent
+from os import getenv
+from data_processing import VectorDatabase
 
-MILVUS_URL = "http://localhost:19530"
-DIFFICULTIES_VECTOR_DIMENSION = 1024
-DIFFICULTIES_COLLECTION_NAME = "difficulties_collection"
-OLLAMA_BASE_URL = "http://localhost:11434"
-EMBEDDING_MODEL = "qwen3-embedding:0.6b"
-
-class VectorDatabase:
-    def __init__(self) -> None:
-        self.milvus_client = MilvusClient(MILVUS_URL)
-        schema = MilvusClient.create_schema()
-        schema.add_field(
-            field_name="id",
-            datatype=DataType.INT64,
-            is_primary=True,
-            auto_id=True
-        )
-        schema.add_field(
-            field_name="vector",
-            datatype=DataType.FLOAT_VECTOR,
-            dim=DIFFICULTIES_VECTOR_DIMENSION
-        )
-        schema.add_field(
-            field_name="text",
-            datatype=DataType.VARCHAR,
-            max_length=65530 # Max possible
-        )
-
-        index_params = self.milvus_client.prepare_index_params()
-
-        index_params.add_index(
-            field_name="text",
-            index_type="AUTOINDEX"
-        )
-
-        index_params.add_index(
-            field_name="vector", 
-            index_type="AUTOINDEX",
-            metric_type="COSINE"
-        )
-
-        if not self.milvus_client.has_collection(DIFFICULTIES_COLLECTION_NAME):
-            self.milvus_client.create_collection(
-                collection_name=DIFFICULTIES_COLLECTION_NAME,
-                schema=schema,
-                index_params=index_params
-            )
+MILVUS_URL = getenv("MILVUS_URL")
+OLLAMA_BASE_URL = getenv("OLLAMA_BASE_URL")
+EMBEDDING_MODEL = getenv("EMBEDDING_MODEL")
+DIFFICULTIES_COLLECTION_NAME = getenv("DIFFICULTIES_COLLECTION_NAME")
 
 
 @tool
@@ -89,5 +48,18 @@ def retrieve_difficulties():
 
     return difficulties
 
-if __name__ == '__main__':
-    retrieve_difficulties.invoke({})
+@tool
+def generate_study_questions(
+    topic: Annotated[str, "The topic, concept, or subject area the questions should focus on."]
+    ):
+    """Generates study or quiz questions related to a specific topic or document context. This tool helps the professor agent create questions that assess a student’s understanding of the material."""
+    print(f"[Tool Call] generate_study_questions(topic={topic})")
+    agent = QuestionGeneratorAgent()
+    response = agent.invoke(topic)
+
+    tool_response = f"# Study questions about: {topic}\n"
+    for i, question in enumerate(response["questions"]):
+        tool_response += f"Question {i+1}: {question.question}\n\n"
+        tool_response += f"Answer {i+1}: {question.answer}\n\n"
+
+    return tool_response

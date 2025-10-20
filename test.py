@@ -1,9 +1,4 @@
-from agents.question_generator import QuestionGeneratorAgent
+from toolbox import generate_study_questions
 
 if __name__ == "__main__":
-    question_generator = QuestionGeneratorAgent()
-    response = question_generator.invoke("Application Layer")
-    for question in response["questions"]:
-        print(f"Question: {question.question}")
-        print(f"Answer: {question.answer}")
-        print()
+    print(generate_study_questions.name)

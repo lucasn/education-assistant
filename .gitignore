@@ -4,6 +4,8 @@ questions.txt
 data/
 database/
 
+.DS_Store
+
 # Cache
 .cache/
 .cache-*/

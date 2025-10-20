@@ -1,101 +1,7 @@
 const { useState, useEffect, useRef } = React;
 
-const PlusIcon = () => (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <line x1="12" y1="5" x2="12" y2="19"></line>
-        <line x1="5" y1="12" x2="19" y2="12"></line>
-    </svg>
-);
 
-const SendIcon = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <line x1="22" y1="2" x2="11" y2="13"></line>
-        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-    </svg>
-);
-
-const MessageIcon = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-    </svg>
-);
-
-const MenuIcon = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <line x1="3" y1="12" x2="21" y2="12"></line>
-        <line x1="3" y1="6" x2="21" y2="6"></line>
-        <line x1="3" y1="18" x2="21" y2="18"></line>
-    </svg>
-);
-
-const XIcon = () => (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <line x1="18" y1="6" x2="6" y2="18"></line>
-        <line x1="6" y1="6" x2="18" y2="18"></line>
-    </svg>
-);
-
-const AlertIcon = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="12" r="10"></circle>
-        <line x1="12" y1="8" x2="12" y2="12"></line>
-        <line x1="12" y1="16" x2="12.01" y2="16"></line>
-    </svg>
-);
-
-const ChevronDownIcon = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <polyline points="6,9 12,15 18,9"></polyline>
-    </svg>
-);
-
-const ChevronUpIcon = () => (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <polyline points="18,15 12,9 6,15"></polyline>
-    </svg>
-);
-
-const MessageBubble = ({idx, message}) => {
-    const [contextExpanded, setContextExpanded] = useState(false);
-    
-    return (
-        <div
-            key={idx}
-            className={`flex gap-4 ${message.type === 'human' ? 'justify-end' : 'justify-start'}`}
-        >
-            <div
-                className={`max-w-[80%] px-4 py-3 rounded-2xl ${message.type === 'human'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-gray-800 text-gray-100'
-                    }`}
-            >
-                <p className="whitespace-pre-wrap">{message.content}</p>
-                
-                {/* Context section - only show for AI messages with context */}
-                {message.type === 'ai' && message.additional_kwargs && message.additional_kwargs.context && (
-                    <div className="mt-3 pt-3 border-t border-gray-600">
-                        <button
-                            onClick={() => setContextExpanded(!contextExpanded)}
-                            className="flex items-center gap-2 text-sm text-gray-300 hover:text-gray-100 transition-colors"
-                        >
-                            {contextExpanded ? <ChevronUpIcon /> : <ChevronDownIcon />}
-                            {/* <span>Context ({message.context.length} characters)</span> */}
-                            <span>Context</span>
-                        </button>
-                        
-                        {contextExpanded && (
-                            <div className="mt-2 p-3 bg-gray-700 rounded-lg text-sm text-gray-200 max-h-48 overflow-y-auto">
-                                <p className="whitespace-pre-wrap">{message.additional_kwargs.context}</p>
-                            </div>
-                        )}
-                    </div>
-                )}
-            </div>
-        </div>
-    )
-}
-
-function LLMProfessorUI() {
+function App() {
     const [conversations, setConversations] = useState([]);
     const [currentThreadId, setCurrentThreadId] = useState(null);
     const [messages, setMessages] = useState([]);
@@ -153,7 +59,7 @@ function LLMProfessorUI() {
 
         const data = await response.json();
 
-        const messages = data[0].messages.filter((m) => m.type === "human" || m.type == "ai");
+        const messages = data[0].messages.filter((m) => m.type === "human" || m.type == "ai" || m.type == "tool");
 
         setMessages(messages);
     }
@@ -260,13 +166,6 @@ function LLMProfessorUI() {
         }
     };
 
-    const handleKeyPress = (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            sendMessage();
-        }
-    };
-
     return (
         <div className="flex h-screen bg-gray-900 text-gray-100">
             <div className={`${sidebarOpen ? 'w-64' : 'w-0'} transition-all duration-300 bg-gray-950 border-r border-gray-800 flex flex-col overflow-hidden`}>
@@ -345,7 +244,7 @@ function LLMProfessorUI() {
                     ) : (
                         <div className="max-w-3xl mx-auto space-y-6">
                             {messages.map((msg, idx) => (
-                                <MessageBubble idx={idx} message={msg}/>
+                                msg.content && <MessageBubble idx={idx} message={msg}/> 
                             ))}
                             {loading && (
                                 <div className="flex gap-4 justify-start">
@@ -369,7 +268,7 @@ function LLMProfessorUI() {
                             <textarea
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
-                                onKeyPress={handleKeyPress}
+                                onKeyUp={(e) => handleKeyPress(e, sendMessage)}
                                 placeholder="Ask your professor anything..."
                                 className="flex-1 bg-transparent px-3 py-2 focus:outline-none resize-none max-h-32"
                                 rows="1"
@@ -390,4 +289,4 @@ function LLMProfessorUI() {
     );
 }
 
-ReactDOM.render(<LLMProfessorUI />, document.getElementById('root'));
+ReactDOM.render(<App />, document.getElementById('root'));

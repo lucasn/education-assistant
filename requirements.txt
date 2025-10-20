@@ -5,6 +5,8 @@ langgraph==0.6.8
 langgraph-checkpoint==2.1.1
 langgraph-prebuilt==0.6.4
 langgraph-sdk==0.2.9
+psycopg==3.2.10
+psycopg-pool==3.2.6
 pdfplumber==0.11.7
 PyMuPDF==1.26.4
 chromadb==1.1.1
@@ -16,5 +18,9 @@ pymongo==4.15.2
 pymilvus==2.4.6
 python-multipart==0.0.20
 minio==7.2.18
-"unstructured[pdf]"
-"unstructured[odt]"
+unstructured==0.18.15
+unstructured-client==0.42.3
+unstructured-inference==1.0.5
+unstructured.pytesseract==0.3.15
+dotenv==0.9.9
+python-dotenv==1.1.1

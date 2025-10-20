@@ -7,18 +7,21 @@ from io import BytesIO
 from langchain_core.documents import Document
 from pymilvus import MilvusClient, DataType
 from unstructured.partition.auto import partition
+from os import getenv
 
 
-OLLAMA_BASE_URL = "http://localhost:11434"
-EMBEDDING_MODEL = "qwen3-embedding:0.6b"
-MINIO_URL = "127.0.0.1:9000"
-MINIO_ACCESS_KEY = "minioadmin"
-MINIO_SECRET_KEY = "minioadmin"
-FILES_BUCKET_NAME = "files-bucket"
-MILVUS_URL = "http://localhost:19530"
-DOCUMENTS_COLLECTION_NAME = "documents_collection"
-DOCUMENTS_VECTOR_DIMENSION = 1024
-TEXT_SPLITTER_CHUNK_SIZE = 1000
+OLLAMA_BASE_URL = getenv("OLLAMA_BASE_URL")
+EMBEDDING_MODEL = getenv("EMBEDDING_MODEL")
+MINIO_URL = getenv("MINIO_URL")
+MINIO_ACCESS_KEY = getenv("MINIO_ACCESS_KEY")
+MINIO_SECRET_KEY = getenv("MINIO_SECRET_KEY")
+FILES_BUCKET_NAME = getenv("FILES_BUCKET_NAME")
+MILVUS_URL = getenv("MILVUS_URL")
+DOCUMENTS_COLLECTION_NAME = getenv("DOCUMENTS_COLLECTION_NAME")
+DOCUMENTS_VECTOR_DIMENSION = int(getenv("DOCUMENTS_VECTOR_DIMENSION"))
+TEXT_SPLITTER_CHUNK_SIZE = int(getenv("TEXT_SPLITTER_CHUNK_SIZE"))
+DIFFICULTIES_VECTOR_DIMENSION = int(getenv("DIFFICULTIES_VECTOR_DIMENSION"))
+DIFFICULTIES_COLLECTION_NAME = getenv("DIFFICULTIES_COLLECTION_NAME")
 
 
 class FileIngestion:
@@ -171,8 +174,43 @@ class VectorialSearch:
 
         } for entry in documents[0] ]
 
-if __name__ == '__main__':
+class VectorDatabase:
+    def __init__(self) -> None:
+        self.milvus_client = MilvusClient(MILVUS_URL)
+        schema = MilvusClient.create_schema()
+        schema.add_field(
+            field_name="id",
+            datatype=DataType.INT64,
+            is_primary=True,
+            auto_id=True
+        )
+        schema.add_field(
+            field_name="vector",
+            datatype=DataType.FLOAT_VECTOR,
+            dim=DIFFICULTIES_VECTOR_DIMENSION
+        )
+        schema.add_field(
+            field_name="text",
+            datatype=DataType.VARCHAR,
+            max_length=65530 # Max possible
+        )
 
-    ingestion = FileIngestion()
-    with open("./data/chapter1.pdf", mode='rb') as f:
-        print(ingestion.extract_text(f.read()))
+        index_params = self.milvus_client.prepare_index_params()
+
+        index_params.add_index(
+            field_name="text",
+            index_type="AUTOINDEX"
+        )
+
+        index_params.add_index(
+            field_name="vector", 
+            index_type="AUTOINDEX",
+            metric_type="COSINE"
+        )
+
+        if not self.milvus_client.has_collection(DIFFICULTIES_COLLECTION_NAME):
+            self.milvus_client.create_collection(
+                collection_name=DIFFICULTIES_COLLECTION_NAME,
+                schema=schema,
+                index_params=index_params
+            )

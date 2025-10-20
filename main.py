@@ -3,16 +3,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
-from langchain_core.messages import AIMessage, HumanMessage
-
 import uvicorn
-
-from models import AppContext, Assistant, AskRequest
+from models import AppContext, AskRequest
 from data_processing import FileIngestion
+from dotenv import load_dotenv
+from os import getenv
+from agents.professor import ProfessorAgent
 
+load_dotenv()
 
-API_PORT = 8080
-API_HOST = "localhost"
+API_PORT = int(getenv("API_PORT"))
+API_HOST = getenv("API_HOST")
 
 context = AppContext()
 
@@ -20,7 +21,7 @@ context = AppContext()
 async def lifespan(app: FastAPI):
     context.build()
 
-    with Assistant.checkpointer() as checkpointer:
+    with ProfessorAgent.checkpointer() as checkpointer:
         checkpointer.setup()
 
     yield
@@ -59,11 +60,11 @@ async def ingest(files: list[UploadFile] = File(...)):
 
 
 @app.post("/ask_async")
-async def ask_assistant_async(askRequest: AskRequest):
+async def ask_professor_async(askRequest: AskRequest):
     if not context.is_existent_conversation(askRequest.threadId):
         context.create_title_for_conversation(askRequest.threadId, askRequest.question)
 
-    generator = context.assistant.ainvoke_graph(askRequest.question, askRequest.threadId)
+    generator = context.professor.ainvoke_graph(askRequest.question, askRequest.threadId)
 
     return StreamingResponse(generator, media_type="text/event-stream")
 
@@ -76,7 +77,7 @@ def retrieve_conversations():
 @app.get("/conversation/{threadId}")
 def retrieve_conversation(threadId: str):
     config = {"configurable": {"thread_id": threadId}}
-    return context.assistant.get_conversation(config)
+    return context.professor.get_conversation(config)
 
 
 
