@@ -52,3 +52,14 @@ const ChevronUpIcon = () => (
         <polyline points="18,15 12,9 6,15"></polyline>
     </svg>
 );
+
+export {
+    PlusIcon,
+    SendIcon,
+    MessageIcon,
+    MenuIcon,
+    XIcon,
+    AlertIcon,
+    ChevronDownIcon,
+    ChevronUpIcon
+}

@@ -1,7 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import StreamingResponse
 from contextlib import asynccontextmanager
 import uvicorn
 from models import AppContext, AskRequest
@@ -35,12 +34,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-app.mount("/static", StaticFiles(directory="static"), name="static")
-
-@app.get("/")
-def retrieve_index():
-    return FileResponse("static/index.html")
 
 @app.post("/ingest")
 async def ingest(files: list[UploadFile] = File(...)):
