@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import Markdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 import {
   ChevronDownIcon,
@@ -36,7 +38,8 @@ export const MessageBubble = ({ idx, message }) => {
             </div>
             :
             <div>
-              <p className="whitespace-pre-wrap">{message.content}</p>
+              <div className='prose dark:prose-invert'><Markdown remarkPlugins={remarkGfm}>{message.content}</Markdown></div>
+              {/* <p className="whitespace-pre-wrap">{message.content}</p> */}
               {message.type === 'ai' && message.additional_kwargs && message.additional_kwargs.context && (
                 <div className="mt-3 pt-3 border-t border-gray-600">
                   <button
