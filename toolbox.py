@@ -4,7 +4,9 @@ from langchain_core.messages import ToolMessage
 from langchain_ollama import OllamaEmbeddings
 from agents.question_generator import QuestionGeneratorAgent
 from os import getenv
-from data_processing import VectorDatabase
+from data_processing import VectorDatabase, VectorialSearch
+from uuid import uuid4
+import json
 
 MILVUS_URL = getenv("MILVUS_URL")
 OLLAMA_BASE_URL = getenv("OLLAMA_BASE_URL")
@@ -63,3 +65,21 @@ def generate_study_questions(
         tool_response += f"Answer {i+1}: {question.answer}\n\n"
 
     return tool_response
+
+@tool
+def search_documents(query: Annotated[str, "The topic, concept, or subject that should be searched in the documents"]):
+    """Search for relevant documents in the database"""
+    print(f"[Tool Call] search_documents(topic={query})")
+    search_engine = VectorialSearch()
+    documents = search_engine.search(query, top_k=6)
+    
+    tool_response = []
+    for document in documents:
+        piece_id = str(uuid4()).split("-")[0]
+        document_json = {
+            "piece_id": piece_id, 
+            "distance": document["distance"],
+            "content": document["text"]
+        }
+        tool_response.append(document_json)
+    return json.dumps(tool_response)

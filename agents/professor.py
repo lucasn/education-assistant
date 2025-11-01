@@ -10,7 +10,7 @@ from langgraph.prebuilt import tools_condition
 from prompts import MAIN_MODEL_PROMPT
 from data_processing import VectorialSearch
 from typing_extensions import TypedDict
-from toolbox import generate_study_questions
+from toolbox import generate_study_questions, search_documents
 
 
 OLLAMA_BASE_URL = getenv("OLLAMA_BASE_URL")
@@ -54,7 +54,7 @@ class ProfessorAgent:
     def __init__(self) -> None:
         self.search_engine = VectorialSearch()
         
-        tools = [generate_study_questions]
+        tools = [generate_study_questions, search_documents]
 
         self.model = ChatOllama(model=PROFESSOR_MODEL, base_url=OLLAMA_BASE_URL, reasoning=True)
         self.model = self.model.bind_tools(tools)
@@ -64,22 +64,14 @@ class ProfessorAgent:
         tools_node = ToolNode(tools)
 
         self.graph_builder.add_node("inject_prompt", self.inject_prompt)
-        self.graph_builder.add_node("context", self.retrieve_context)
         self.graph_builder.add_node("chatbot", self.chatbot)
         self.graph_builder.add_node("tools", tools_node)
-        self.graph_builder.add_node("inject_context", self.inject_context)
 
         self.graph_builder.add_edge(START, "inject_prompt")
-        self.graph_builder.add_edge("inject_prompt", "context")
-        self.graph_builder.add_edge("context", "chatbot")
+        self.graph_builder.add_edge("inject_prompt", "chatbot")
 
-        self.graph_builder.add_conditional_edges(
-            "chatbot", 
-            tools_condition, 
-            {"tools": "tools", END: "inject_context"}
-            )
+        self.graph_builder.add_conditional_edges("chatbot", tools_condition)
         self.graph_builder.add_edge("tools", "chatbot")
-        self.graph_builder.add_edge("inject_context", END)
 
     @staticmethod
     def checkpointer():
@@ -109,9 +101,9 @@ class ProfessorAgent:
         last_message = state["messages"][-1]
 
         if isinstance(last_message, HumanMessage):
-            context = state["context"]
+            # context = state["context"]
             query = last_message.content
-            prompt = f"Context: {context}\n\nUser Question: {query}"
+            prompt = query
 
             llm_response = self.model.invoke(state["messages"][:-1] + [HumanMessage(content=prompt)])
             state["messages"].append(llm_response)
