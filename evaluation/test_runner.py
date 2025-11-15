@@ -1,0 +1,116 @@
+import requests
+import json
+import uuid
+from rabbitmq_client import RabbitMQClient
+
+
+def run_test(question, api_url="http://localhost:8080"):
+    thread_id = f"test_{uuid.uuid4()}"
+
+    response = requests.post(
+        f"{api_url}/ask_async",
+        json={
+            "threadId": thread_id,
+            "question": question
+        },
+        stream=True
+    )
+
+    if not response.ok:
+        raise Exception(f"API request failed: {response.status_code} {response.text}")
+
+    final_answer = ""
+    context = ""
+
+    for line in response.iter_lines():
+        if line:
+            line_text = line.decode('utf-8')
+
+            if line_text.startswith('data: '):
+                json_data = line_text[6:]
+                try:
+                    data = json.loads(json_data)
+
+                    if data.get("content"):
+                        final_answer += data["content"]
+
+                    if data.get("additional_kwargs", {}).get("context"):
+                        context = data["additional_kwargs"]["context"]
+
+                except json.JSONDecodeError as e:
+                    print(f"Error parsing JSON: {e}")
+                    continue
+
+    conversation_response = requests.get(f"{api_url}/conversation/{thread_id}")
+
+    if not conversation_response.ok:
+        raise Exception(f"Failed to fetch conversation: {conversation_response.status_code} {conversation_response.text}")
+
+    conversation_data = conversation_response.json()
+    messages = conversation_data[0].get("messages", [])
+
+    tool_calls = []
+    tool_call_map = {}
+
+    for message in messages:
+        if message.get("type") == "ai" and "tool_calls" in message:
+            for tool_call in message.get("tool_calls", []):
+                tool_call_map[tool_call["id"]] = {
+                    "name": tool_call["name"],
+                    "args": tool_call["args"],
+                    "response": None
+                }
+
+        elif message.get("type") == "tool":
+            tool_call_id = message.get("tool_call_id")
+            if tool_call_id in tool_call_map:
+                tool_call_map[tool_call_id]["response"] = message.get("content")
+
+    tool_calls = list(tool_call_map.values())
+
+    return {
+        "answer": final_answer,
+        "context": context if context else None,
+        "tool_calls": tool_calls
+    }
+
+
+def run_tests(questions, api_url="http://localhost:8080", rabbitmq_host="localhost", rabbitmq_port=5672, rabbitmq_user="guest", rabbitmq_password="guest"):
+    rabbitmq_client = RabbitMQClient(
+        host=rabbitmq_host,
+        port=rabbitmq_port,
+        user=rabbitmq_user,
+        password=rabbitmq_password
+    )
+
+    rabbitmq_client.connect()
+    rabbitmq_client.declare_queue('tests_results', durable=True)
+
+    for question in questions:
+        print(f"Running test for question: {question}")
+
+        result = run_test(question, api_url)
+
+        test_result = {
+            "question": question,
+            "answer": result["answer"],
+            "context": result["context"],
+            "tool_calls": result["tool_calls"]
+        }
+
+        rabbitmq_client.send_message('tests_results', test_result, persistent=True)
+
+        print(f"Result sent to queue for question: {question}")
+
+    rabbitmq_client.close()
+    print(f"All {len(questions)} tests completed and sent to queue")
+
+
+if __name__ == "__main__":
+    test_questions = [
+        "What is machine learning?",
+        "Explain neural networks",
+        "What is deep learning?"
+    ]
+
+    run_tests(test_questions)

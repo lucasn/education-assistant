@@ -56,7 +56,7 @@ class ProfessorAgent:
         
         tools = [generate_study_questions, search_documents]
 
-        self.model = ChatOllama(model=PROFESSOR_MODEL, base_url=OLLAMA_BASE_URL, reasoning=True)
+        self.model = ChatOllama(model=PROFESSOR_MODEL, base_url=OLLAMA_BASE_URL, reasoning=False)
         self.model = self.model.bind_tools(tools)
 
         self.graph_builder = StateGraph(State)
