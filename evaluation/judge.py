@@ -1,8 +1,10 @@
 from langchain_ollama import ChatOllama
 from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel
 from typing import Literal
-from .prompts import CORRECTNESS_PROMPT, GROUNDEDNESS_PROMPT
+from prompts import CORRECTNESS_PROMPT, GROUNDEDNESS_PROMPT
+from os import getenv
 
 
 class EvaluationResult(BaseModel):
@@ -13,8 +15,8 @@ class EvaluationResult(BaseModel):
 class Judge:
     def __init__(
         self,
-        model="llama3.2",
-        base_url="http://localhost:11434",
+        model="qwen3:8b",
+        base_url=getenv("OLLAMA_URL"),
         temperature=0.0,
         **kwargs
     ):
@@ -26,22 +28,24 @@ class Judge:
             model=model,
             base_url=base_url,
             temperature=temperature,
+            reasoning=True,
             **kwargs
         )
 
-        structured_llm = self.llm.with_structured_output(EvaluationResult)
+        # JSON output parser for parsing model's JSON responses
+        json_parser = JsonOutputParser(pydantic_object=EvaluationResult)
 
         correctness_prompt = ChatPromptTemplate.from_messages([
             ("system", CORRECTNESS_PROMPT),
             ("human", "{input}")
         ])
-        self.correctness_chain = correctness_prompt | structured_llm
+        self.correctness_chain = correctness_prompt | self.llm | json_parser
 
         groundedness_prompt = ChatPromptTemplate.from_messages([
             ("system", GROUNDEDNESS_PROMPT),
             ("human", "{input}")
         ])
-        self.groundedness_chain = groundedness_prompt | structured_llm
+        self.groundedness_chain = groundedness_prompt | self.llm | json_parser
 
     def evaluate_correctness(self, input):
         return self.correctness_chain.invoke({"input": input})

@@ -76,6 +76,9 @@ def run_test(question, api_url="http://localhost:8080"):
 
 
 def run_tests(questions, api_url="http://localhost:8080", rabbitmq_host="localhost", rabbitmq_port=5672, rabbitmq_user="guest", rabbitmq_password="guest"):
+    test_run_id = str(uuid.uuid4())
+    print(f"Starting test run with ID: {test_run_id}")
+
     rabbitmq_client = RabbitMQClient(
         host=rabbitmq_host,
         port=rabbitmq_port,
@@ -92,6 +95,7 @@ def run_tests(questions, api_url="http://localhost:8080", rabbitmq_host="localho
         result = run_test(question, api_url)
 
         test_result = {
+            "test_run_id": test_run_id,
             "question": question,
             "answer": result["answer"],
             "context": result["context"],
@@ -104,13 +108,13 @@ def run_tests(questions, api_url="http://localhost:8080", rabbitmq_host="localho
 
     rabbitmq_client.close()
     print(f"All {len(questions)} tests completed and sent to queue")
+    print(f"Test run ID: {test_run_id}")
 
 
 if __name__ == "__main__":
     test_questions = [
-        "What is machine learning?",
-        "Explain neural networks",
-        "What is deep learning?"
+        "What is the application layer?",
+        "What are the protocols of the application layer?"
     ]
 
     run_tests(test_questions)

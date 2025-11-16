@@ -145,6 +145,25 @@ services:
     volumes:
       - rabbitmq_data:/var/lib/rabbitmq
 
+  # evaluator:
+  #   build:
+  #     context: ./evaluation
+  #     dockerfile: Dockerfile
+  #   container_name: evaluator
+  #   restart: always
+  #   volumes:
+  #     - ./evaluation:/app
+  #   depends_on:
+  #     - rabbitmq
+  #   env_file:
+  #     - ./evaluation/.env
+  #   environment:
+  #     PYTHONUNBUFFERED: 1
+  #     RABBITMQ_HOST: rabbitmq
+  #     RABBITMQ_PORT: 5672
+  #     RABBITMQ_USER: guest
+  #     RABBITMQ_PASSWORD: guest
+
 volumes:
   postgres_data:
   mongo_data:
