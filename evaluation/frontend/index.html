@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Evaluation Dashboard</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const API_URL = 'http://localhost:5001/api';
+
+        // Simple Router Component
+        function Router({ children }) {
+            const [path, setPath] = useState(window.location.pathname);
+
+            useEffect(() => {
+                const handlePopState = () => setPath(window.location.pathname);
+                window.addEventListener('popstate', handlePopState);
+                return () => window.removeEventListener('popstate', handlePopState);
+            }, []);
+
+            const navigate = (to) => {
+                window.history.pushState({}, '', to);
+                setPath(to);
+            };
+
+            return React.Children.map(children, child => {
+                return React.cloneElement(child, { path, navigate });
+            });
+        }
+
+        function Route({ path: currentPath, pathPattern, component: Component, navigate }) {
+            const match = matchPath(currentPath, pathPattern);
+            if (!match) return null;
+            return <Component navigate={navigate} params={match.params} />;
+        }
+
+        function matchPath(currentPath, pattern) {
+            if (pattern === currentPath) return { params: {} };
+
+            const patternParts = pattern.split('/').filter(Boolean);
+            const pathParts = currentPath.split('/').filter(Boolean);
+
+            if (patternParts.length !== pathParts.length) return null;
+
+            const params = {};
+            for (let i = 0; i < patternParts.length; i++) {
+                if (patternParts[i].startsWith(':')) {
+                    params[patternParts[i].slice(1)] = pathParts[i];
+                } else if (patternParts[i] !== pathParts[i]) {
+                    return null;
+                }
+            }
+
+            return { params };
+        }
+
+        // Verdict Badge Component
+        function VerdictBadge({ verdict }) {
+            const colors = {
+                good: 'bg-green-100 text-green-800 border-green-200',
+                satisfactory: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+                unsatisfactory: 'bg-red-100 text-red-800 border-red-200'
+            };
+
+            return (
+                <span className={`px-3 py-1 rounded-full text-sm font-medium border ${colors[verdict] || 'bg-gray-100 text-gray-800 border-gray-200'}`}>
+                    {verdict}
+                </span>
+            );
+        }
+
+        // Test Batteries List Component
+        function TestBatteriesList({ navigate }) {
+            const [batteries, setBatteries] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+
+            useEffect(() => {
+                fetchBatteries();
+            }, []);
+
+            const fetchBatteries = async () => {
+                try {
+                    setLoading(true);
+                    const response = await fetch(`${API_URL}/test-batteries`);
+                    if (!response.ok) throw new Error('Failed to fetch test batteries');
+                    const data = await response.json();
+                    setBatteries(data);
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const formatDate = (dateString) => {
+                const date = new Date(dateString);
+                return date.toLocaleString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                });
+            };
+
+            if (loading) {
+                return (
+                    <div className="flex items-center justify-center min-h-screen">
+                        <div className="animate-pulse text-gray-500 text-lg">Loading test batteries...</div>
+                    </div>
+                );
+            }
+
+            if (error) {
+                return (
+                    <div className="flex items-center justify-center min-h-screen">
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md">
+                            <h3 className="text-red-800 font-semibold text-lg mb-2">Error</h3>
+                            <p className="text-red-600">{error}</p>
+                            <button
+                                onClick={fetchBatteries}
+                                className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                            >
+                                Retry
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
+                    <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+                        {/* Header */}
+                        <div className="mb-8">
+                            <h1 className="text-4xl font-bold text-gray-900 mb-2">Evaluation Dashboard</h1>
+                            <p className="text-gray-600">View and analyze test battery results</p>
+                        </div>
+
+                        {/* Stats */}
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                            <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                                <div className="text-sm font-medium text-gray-500 mb-1">Total Batteries</div>
+                                <div className="text-3xl font-bold text-gray-900">{batteries.length}</div>
+                            </div>
+                            <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                                <div className="text-sm font-medium text-gray-500 mb-1">Total Tests</div>
+                                <div className="text-3xl font-bold text-gray-900">
+                                    {batteries.reduce((sum, b) => sum + b.test_count, 0)}
+                                </div>
+                            </div>
+                            <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                                <div className="text-sm font-medium text-gray-500 mb-1">Latest Run</div>
+                                <div className="text-lg font-semibold text-gray-900">
+                                    {batteries.length > 0 ? formatDate(batteries[0].timestamp) : 'N/A'}
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Test Batteries List */}
+                        <div className="space-y-4">
+                            <h2 className="text-2xl font-semibold text-gray-900 mb-4">Test Batteries</h2>
+
+                            {batteries.length === 0 ? (
+                                <div className="bg-white rounded-xl shadow-sm p-12 text-center border border-gray-100">
+                                    <div className="text-gray-400 text-lg mb-2">No test batteries found</div>
+                                    <p className="text-gray-500">Run some tests to see them here</p>
+                                </div>
+                            ) : (
+                                batteries.map((battery) => (
+                                    <div
+                                        key={battery.test_run_id}
+                                        className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-200 border border-gray-100 overflow-hidden cursor-pointer"
+                                        onClick={() => navigate(`/battery/${battery.test_run_id}`)}
+                                    >
+                                        <div className="p-6">
+                                            <div className="flex items-start justify-between mb-4">
+                                                <div className="flex-1">
+                                                    <div className="flex items-center gap-3 mb-2">
+                                                        <h3 className="text-lg font-semibold text-gray-900">
+                                                            Test Battery
+                                                        </h3>
+                                                        <span className="px-2.5 py-0.5 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
+                                                            {battery.test_count} {battery.test_count === 1 ? 'test' : 'tests'}
+                                                        </span>
+                                                    </div>
+                                                    <p className="text-sm text-gray-500 font-mono">
+                                                        ID: {battery.test_run_id}
+                                                    </p>
+                                                </div>
+                                                <div className="text-right">
+                                                    <div className="text-sm text-gray-500">
+                                                        {formatDate(battery.timestamp)}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Questions Preview */}
+                                            <div className="border-t border-gray-100 pt-4">
+                                                <div className="text-sm font-medium text-gray-700 mb-2">Questions:</div>
+                                                <ul className="space-y-1">
+                                                    {battery.questions.slice(0, 3).map((question, idx) => (
+                                                        <li key={idx} className="text-sm text-gray-600 flex items-start">
+                                                            <span className="mr-2">•</span>
+                                                            <span className="line-clamp-1">{question}</span>
+                                                        </li>
+                                                    ))}
+                                                    {battery.questions.length > 3 && (
+                                                        <li className="text-sm text-gray-500 italic ml-3">
+                                                            +{battery.questions.length - 3} more
+                                                        </li>
+                                                    )}
+                                                </ul>
+                                            </div>
+                                        </div>
+
+                                        <div className="bg-gray-50 px-6 py-3 flex items-center justify-end">
+                                            <span className="text-sm font-medium text-blue-600 flex items-center gap-1">
+                                                View Details
+                                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                                                </svg>
+                                            </span>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Test Card Component
+        function TestCard({ test }) {
+            const [expanded, setExpanded] = useState(false);
+
+            return (
+                <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+                    <div className="p-6">
+                        {/* Question */}
+                        <div className="mb-4">
+                            <div className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                                Question
+                            </div>
+                            <div className="text-lg font-medium text-gray-900">
+                                {test.question}
+                            </div>
+                        </div>
+
+                        {/* Criteria Evaluations */}
+                        <div className="space-y-4 mb-4">
+                            {/* Groundedness */}
+                            {test.groundedness && (
+                                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm font-semibold text-gray-700">Groundedness</span>
+                                        </div>
+                                        <VerdictBadge verdict={test.groundedness.verdict} />
+                                    </div>
+
+                                    <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                        <div className="text-sm font-medium text-gray-700 mb-1">Analysis</div>
+                                        <div className="text-sm text-gray-600 leading-relaxed">
+                                            {test.groundedness.analysis}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Placeholder for future criteria */}
+                            {/* You can add more criteria here in the same format */}
+                        </div>
+
+                        {/* Collapsible Details */}
+                        <div className="border-t border-gray-200 pt-4">
+                            <button
+                                onClick={() => setExpanded(!expanded)}
+                                className="flex items-center justify-between w-full text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors"
+                            >
+                                <span>{expanded ? 'Hide' : 'Show'} Additional Details</span>
+                                <svg
+                                    className={`w-5 h-5 transition-transform ${expanded ? 'rotate-180' : ''}`}
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                >
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                                </svg>
+                            </button>
+
+                            {expanded && (
+                                <div className="mt-4 space-y-4">
+                                    {/* Answer */}
+                                    <div>
+                                        <div className="text-sm font-semibold text-gray-700 mb-2">Model Answer</div>
+                                        <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                                            <div className="text-sm text-gray-700 whitespace-pre-wrap">
+                                                {test.answer}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Context/Search Documents */}
+                                    {test.search_documents_content && (
+                                        <div>
+                                            <div className="text-sm font-semibold text-gray-700 mb-2">Context</div>
+                                            <div className="bg-gray-50 rounded-lg p-3 border border-gray-200 max-h-64 overflow-y-auto">
+                                                <div className="text-xs text-gray-600 whitespace-pre-wrap font-mono">
+                                                    {test.search_documents_content}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Timestamp */}
+                                    <div>
+                                        <div className="text-sm font-semibold text-gray-700 mb-2">Timestamp</div>
+                                        <div className="text-sm text-gray-600">
+                                            {new Date(test.timestamp).toLocaleString()}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Test Battery Detail Component
+        function TestBatteryDetail({ params, navigate }) {
+            const [tests, setTests] = useState([]);
+            const [loading, setLoading] = useState(true);
+            const [error, setError] = useState(null);
+            const testRunId = params.id;
+
+            useEffect(() => {
+                fetchBatteryTests();
+            }, [testRunId]);
+
+            const fetchBatteryTests = async () => {
+                try {
+                    setLoading(true);
+                    const response = await fetch(`${API_URL}/test-battery/${testRunId}`);
+                    if (!response.ok) throw new Error('Failed to fetch battery tests');
+                    const data = await response.json();
+                    setTests(data);
+                } catch (err) {
+                    setError(err.message);
+                } finally {
+                    setLoading(false);
+                }
+            };
+
+            const calculateStats = () => {
+                if (tests.length === 0) return { good: 0, satisfactory: 0, unsatisfactory: 0 };
+
+                const stats = { good: 0, satisfactory: 0, unsatisfactory: 0 };
+                tests.forEach(test => {
+                    if (test.groundedness) {
+                        stats[test.groundedness.verdict.toLowerCase()]++;
+                    }
+                });
+                return stats;
+            };
+
+            const stats = calculateStats();
+
+            if (loading) {
+                return (
+                    <div className="flex items-center justify-center min-h-screen">
+                        <div className="animate-pulse text-gray-500 text-lg">Loading tests...</div>
+                    </div>
+                );
+            }
+
+            if (error) {
+                return (
+                    <div className="flex items-center justify-center min-h-screen">
+                        <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md">
+                            <h3 className="text-red-800 font-semibold text-lg mb-2">Error</h3>
+                            <p className="text-red-600">{error}</p>
+                            <button
+                                onClick={() => navigate('/')}
+                                className="mt-4 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                            >
+                                Back to Home
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-50">
+                    <div className="max-w-7xl mx-auto px-4 py-8 sm:px-6 lg:px-8">
+                        {/* Header */}
+                        <div className="mb-8">
+                            <button
+                                onClick={() => navigate('/')}
+                                className="flex items-center gap-2 text-blue-600 hover:text-blue-700 font-medium mb-4 transition-colors"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                                </svg>
+                                Back to Test Batteries
+                            </button>
+
+                            <h1 className="text-4xl font-bold text-gray-900 mb-2">Test Battery Details</h1>
+                            <p className="text-gray-600 font-mono text-sm">ID: {testRunId}</p>
+                        </div>
+
+                        {/* Stats */}
+                        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+                            <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                                <div className="text-sm font-medium text-gray-500 mb-1">Total Tests</div>
+                                <div className="text-3xl font-bold text-gray-900">{tests.length}</div>
+                            </div>
+                            <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                                <div className="text-sm font-medium text-green-600 mb-1">Good</div>
+                                <div className="text-3xl font-bold text-green-700">{stats.good}</div>
+                            </div>
+                            <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                                <div className="text-sm font-medium text-yellow-600 mb-1">Satisfactory</div>
+                                <div className="text-3xl font-bold text-yellow-700">{stats.satisfactory}</div>
+                            </div>
+                            <div className="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
+                                <div className="text-sm font-medium text-red-600 mb-1">Unsatisfactory</div>
+                                <div className="text-3xl font-bold text-red-700">{stats.unsatisfactory}</div>
+                            </div>
+                        </div>
+
+                        {/* Tests List */}
+                        <div className="space-y-6">
+                            <h2 className="text-2xl font-semibold text-gray-900">Tests</h2>
+
+                            {tests.length === 0 ? (
+                                <div className="bg-white rounded-xl shadow-sm p-12 text-center border border-gray-100">
+                                    <div className="text-gray-400 text-lg">No tests found</div>
+                                </div>
+                            ) : (
+                                tests.map((test, index) => (
+                                    <div key={test._id}>
+                                        <div className="mb-2">
+                                            <span className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
+                                                Test {index + 1}
+                                            </span>
+                                        </div>
+                                        <TestCard test={test} />
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // Main App Component
+        function App() {
+            return (
+                <Router>
+                    <Route pathPattern="/" component={TestBatteriesList} />
+                    <Route pathPattern="/battery/:id" component={TestBatteryDetail} />
+                </Router>
+            );
+        }
+
+        // Render the app
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
