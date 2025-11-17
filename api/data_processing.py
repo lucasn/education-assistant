@@ -1,22 +1,18 @@
 import pymupdf
 from langchain_ollama import OllamaEmbeddings
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from minio import Minio
 from uuid import uuid4
 from io import BytesIO
 from langchain_core.documents import Document
-from pymilvus import MilvusClient, DataType
 from unstructured.partition.auto import partition
 from os import getenv
+import psycopg
+from pgvector.psycopg import register_vector
 
 
 OLLAMA_BASE_URL = getenv("OLLAMA_BASE_URL")
 EMBEDDING_MODEL = getenv("EMBEDDING_MODEL")
-MINIO_URL = getenv("MINIO_URL")
-MINIO_ACCESS_KEY = getenv("MINIO_ACCESS_KEY")
-MINIO_SECRET_KEY = getenv("MINIO_SECRET_KEY")
-FILES_BUCKET_NAME = getenv("FILES_BUCKET_NAME")
-MILVUS_URL = getenv("MILVUS_URL")
+VECTOR_DB_URL = getenv("VECTOR_DB_URL")
 DOCUMENTS_COLLECTION_NAME = getenv("DOCUMENTS_COLLECTION_NAME")
 DOCUMENTS_VECTOR_DIMENSION = int(getenv("DOCUMENTS_VECTOR_DIMENSION"))
 TEXT_SPLITTER_CHUNK_SIZE = int(getenv("TEXT_SPLITTER_CHUNK_SIZE"))
@@ -24,105 +20,101 @@ DIFFICULTIES_VECTOR_DIMENSION = int(getenv("DIFFICULTIES_VECTOR_DIMENSION"))
 DIFFICULTIES_COLLECTION_NAME = getenv("DIFFICULTIES_COLLECTION_NAME")
 
 
+def initialize_vector_database(conn):
+    """Initialize pgvector extension and create all necessary tables and indexes"""
+    with conn.cursor() as cur:
+        # Create documents table
+        cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS {DOCUMENTS_COLLECTION_NAME} (
+                id BIGSERIAL PRIMARY KEY,
+                vector vector({DOCUMENTS_VECTOR_DIMENSION}),
+                text TEXT,
+                file_id VARCHAR(50),
+                filename TEXT,
+                keywords TEXT[],
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Create documents indexes
+        cur.execute(f"""
+            CREATE INDEX IF NOT EXISTS {DOCUMENTS_COLLECTION_NAME}_vector_idx
+            ON {DOCUMENTS_COLLECTION_NAME}
+            USING ivfflat (vector vector_cosine_ops)
+            WITH (lists = 100)
+        """)
+
+        cur.execute(f"""
+            CREATE INDEX IF NOT EXISTS {DOCUMENTS_COLLECTION_NAME}_file_id_idx
+            ON {DOCUMENTS_COLLECTION_NAME} (file_id)
+        """)
+
+        cur.execute(f"""
+            CREATE INDEX IF NOT EXISTS {DOCUMENTS_COLLECTION_NAME}_text_idx
+            ON {DOCUMENTS_COLLECTION_NAME}
+            USING gin(to_tsvector('english', text))
+        """)
+
+        # Create difficulties table
+        cur.execute(f"""
+            CREATE TABLE IF NOT EXISTS {DIFFICULTIES_COLLECTION_NAME} (
+                id BIGSERIAL PRIMARY KEY,
+                vector vector({DIFFICULTIES_VECTOR_DIMENSION}),
+                text TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Create difficulties indexes
+        cur.execute(f"""
+            CREATE INDEX IF NOT EXISTS {DIFFICULTIES_COLLECTION_NAME}_vector_idx
+            ON {DIFFICULTIES_COLLECTION_NAME}
+            USING ivfflat (vector vector_cosine_ops)
+            WITH (lists = 100)
+        """)
+
+        cur.execute(f"""
+            CREATE INDEX IF NOT EXISTS {DIFFICULTIES_COLLECTION_NAME}_text_idx
+            ON {DIFFICULTIES_COLLECTION_NAME}
+            USING gin(to_tsvector('english', text))
+        """)
+
+
 class FileIngestion:
     def __init__(self) -> None:
         self.embedding_model = OllamaEmbeddings(model=EMBEDDING_MODEL, base_url=OLLAMA_BASE_URL)
         self.text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=TEXT_SPLITTER_CHUNK_SIZE, 
-            chunk_overlap=200, 
+            chunk_size=TEXT_SPLITTER_CHUNK_SIZE,
+            chunk_overlap=200,
             add_start_index=True
         )
 
-        self.minio_client = Minio(MINIO_URL,
-            access_key=MINIO_ACCESS_KEY,
-            secret_key=MINIO_SECRET_KEY,
-            secure=False
-        )
+        # Connect to PostgreSQL with pgvector
+        self.conn = psycopg.connect(VECTOR_DB_URL, autocommit=True)
+        with self.conn.cursor() as cur:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        register_vector(self.conn)
 
-        files_bucket = self.minio_client.bucket_exists(FILES_BUCKET_NAME)
-        if not files_bucket:
-            self.minio_client.make_bucket(FILES_BUCKET_NAME)
-            print("Created bucket", FILES_BUCKET_NAME)
-        else:
-            print("Bucket", FILES_BUCKET_NAME, "already exists")
-
-        self.milvus_client = MilvusClient(MILVUS_URL)
-
-        schema = MilvusClient.create_schema()
-        schema.add_field(
-            field_name="id",
-            datatype=DataType.INT64,
-            is_primary=True,
-            auto_id=True
-        )
-        schema.add_field(
-            field_name="vector",
-            datatype=DataType.FLOAT_VECTOR,
-            dim=DOCUMENTS_VECTOR_DIMENSION
-        )
-        schema.add_field(
-            field_name="text",
-            datatype=DataType.VARCHAR,
-            max_length=2*TEXT_SPLITTER_CHUNK_SIZE
-        )
-        schema.add_field(
-            field_name="file_id",
-            datatype=DataType.VARCHAR,
-            max_length=50
-        )
-        schema.add_field(
-            field_name="keywords",
-            datatype=DataType.ARRAY,
-            element_type=DataType.VARCHAR,
-            max_capacity=200,
-            max_length=512,
-            nullable=True
-        )
-
-        index_params = self.milvus_client.prepare_index_params()
-
-        index_params.add_index(
-            field_name="text",
-            index_type="AUTOINDEX"
-        )
-
-        index_params.add_index(
-            field_name="file_id",
-            index_type="AUTOINDEX"
-        )
-
-        index_params.add_index(
-            field_name="vector", 
-            index_type="AUTOINDEX",
-            metric_type="COSINE"
-        )
-
-        if not self.milvus_client.has_collection(DOCUMENTS_COLLECTION_NAME):
-            self.milvus_client.create_collection(
-                collection_name=DOCUMENTS_COLLECTION_NAME,
-                schema=schema,
-                index_params=index_params
-            )
+        # Initialize database tables and indexes
+        initialize_vector_database(self.conn)
 
     def ingest(self, file_bytes, filename):
         file_id = str(uuid4())
-        metadata = {'filename': filename}
-        self.upload_to_bucket(file_bytes, file_id, metadata)
 
         text = self.extract_text(file_bytes)
         pieces, embeddings = self.embed_text(text)
 
-        for piece, embedding in zip(pieces, embeddings):
-            data = {
-                "text": piece,
-                "vector": embedding,
-                "keywords": [],
-                "file_id": file_id
-            }
-            self.milvus_client.insert(collection_name=DOCUMENTS_COLLECTION_NAME, data=data)
-
-    def upload_to_bucket(self, file_bytes, file_id, metadata):
-        self.minio_client.put_object(FILES_BUCKET_NAME, file_id, BytesIO(file_bytes), len(file_bytes), metadata=metadata)
+        # Store all chunks with the same file_id and filename
+        with self.conn.cursor() as cur:
+            for piece, embedding in zip(pieces, embeddings):
+                cur.execute(
+                    f"""
+                    INSERT INTO {DOCUMENTS_COLLECTION_NAME}
+                    (vector, text, file_id, filename, keywords)
+                    VALUES (%s, %s, %s, %s, %s)
+                    """,
+                    (embedding, piece, file_id, filename, [])
+                )
 
     def extract_text(self, file_bytes):
         try:
@@ -148,69 +140,121 @@ class FileIngestion:
 
         return text_splits, embeddings
 
+    def get_chunks_by_file_id(self, file_id):
+        """Retrieve all chunks for a given file_id"""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, text, filename
+                FROM {DOCUMENTS_COLLECTION_NAME}
+                WHERE file_id = %s
+                ORDER BY id
+                """,
+                (file_id,)
+            )
+            results = cur.fetchall()
+            return [{
+                "id": row[0],
+                "text": row[1],
+                "filename": row[2]
+            } for row in results]
 
-class VectorialSearch:
+    def __del__(self):
+        if hasattr(self, 'conn'):
+            self.conn.close()
+
+
+class VectorStore:
     def __init__(self) -> None:
         self.embedding_model = OllamaEmbeddings(model=EMBEDDING_MODEL, base_url=OLLAMA_BASE_URL)
-        self.milvus_client = MilvusClient(MILVUS_URL)
-    
+        self.conn = psycopg.connect(VECTOR_DB_URL, autocommit=True)
+        with self.conn.cursor() as cur:
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector")
+        register_vector(self.conn)
+
+        # Initialize database tables and indexes
+        initialize_vector_database(self.conn)
+
+    # Document search methods
     def search(self, query, top_k=3):
+        """Search for documents by query string (embeds the query automatically)"""
         embedding = self.embedding_model.embed_query(query)
-        documents = self.milvus_client.search(
-            collection_name=DOCUMENTS_COLLECTION_NAME,
-            anns_field="vector",
-            data=[embedding],
-            limit=top_k,
-            search_params={"metric_type": "COSINE"},
-            output_fields=["text", "file_id", "keywords"]
-        )
 
-        return [ {
-            "id": entry["id"],
-            "distance": entry["distance"],
-            "text": entry["entity"]["text"],
-            "keywords": entry["entity"]["keywords"],
-            "file_id": entry["entity"]["file_id"]
-
-        } for entry in documents[0] ]
-
-class VectorDatabase:
-    def __init__(self) -> None:
-        self.milvus_client = MilvusClient(MILVUS_URL)
-        schema = MilvusClient.create_schema()
-        schema.add_field(
-            field_name="id",
-            datatype=DataType.INT64,
-            is_primary=True,
-            auto_id=True
-        )
-        schema.add_field(
-            field_name="vector",
-            datatype=DataType.FLOAT_VECTOR,
-            dim=DIFFICULTIES_VECTOR_DIMENSION
-        )
-        schema.add_field(
-            field_name="text",
-            datatype=DataType.VARCHAR,
-            max_length=65530 # Max possible
-        )
-
-        index_params = self.milvus_client.prepare_index_params()
-
-        index_params.add_index(
-            field_name="text",
-            index_type="AUTOINDEX"
-        )
-
-        index_params.add_index(
-            field_name="vector", 
-            index_type="AUTOINDEX",
-            metric_type="COSINE"
-        )
-
-        if not self.milvus_client.has_collection(DIFFICULTIES_COLLECTION_NAME):
-            self.milvus_client.create_collection(
-                collection_name=DIFFICULTIES_COLLECTION_NAME,
-                schema=schema,
-                index_params=index_params
+        with self.conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, text, file_id, keywords,
+                       1 - (vector <=> %s::vector) as distance
+                FROM {DOCUMENTS_COLLECTION_NAME}
+                ORDER BY vector <=> %s::vector
+                LIMIT %s
+                """,
+                (embedding, embedding, top_k)
             )
+
+            results = cur.fetchall()
+
+            return [{
+                "id": row[0],
+                "text": row[1],
+                "file_id": row[2],
+                "keywords": row[3] if row[3] else [],
+                "distance": float(row[4])
+            } for row in results]
+
+    # Difficulty management methods
+    def insert_difficulty(self, text, vector):
+        """Insert a difficulty with its vector into the difficulties collection"""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                f"""
+                INSERT INTO {DIFFICULTIES_COLLECTION_NAME}
+                (vector, text)
+                VALUES (%s, %s)
+                RETURNING id
+                """,
+                (vector, text)
+            )
+            return cur.fetchone()[0]
+
+    def query_difficulties(self, limit=100):
+        """Query all difficulties from the database"""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, text
+                FROM {DIFFICULTIES_COLLECTION_NAME}
+                ORDER BY created_at DESC
+                LIMIT %s
+                """,
+                (limit,)
+            )
+            results = cur.fetchall()
+            return [{"id": row[0], "text": row[1]} for row in results]
+
+    def search_difficulties(self, vector, top_k=3):
+        """Search for similar difficulties by vector"""
+        with self.conn.cursor() as cur:
+            cur.execute(
+                f"""
+                SELECT id, text,
+                       1 - (vector <=> %s::vector) as distance
+                FROM {DIFFICULTIES_COLLECTION_NAME}
+                ORDER BY vector <=> %s::vector
+                LIMIT %s
+                """,
+                (vector, vector, top_k)
+            )
+
+            results = cur.fetchall()
+
+            return [{
+                "id": row[0],
+                "text": row[1],
+                "distance": float(row[2])
+            } for row in results]
+
+    def __del__(self):
+        if hasattr(self, 'conn'):
+            self.conn.close()
+

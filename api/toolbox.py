@@ -4,11 +4,10 @@ from langchain_core.messages import ToolMessage
 from langchain_ollama import OllamaEmbeddings
 from agents.question_generator import QuestionGeneratorAgent
 from os import getenv
-from data_processing import VectorDatabase, VectorialSearch
+from data_processing import VectorStore
 from uuid import uuid4
 import json
 
-MILVUS_URL = getenv("MILVUS_URL")
 OLLAMA_BASE_URL = getenv("OLLAMA_BASE_URL")
 EMBEDDING_MODEL = getenv("EMBEDDING_MODEL")
 DIFFICULTIES_COLLECTION_NAME = getenv("DIFFICULTIES_COLLECTION_NAME")
@@ -20,33 +19,21 @@ def register_difficulty(
     ):
     """Register a student's difficulty"""
     print("[X] Register difficulties called")
-    database = VectorDatabase()
+    vector_store = VectorStore()
     embedding_model = OllamaEmbeddings(model=EMBEDDING_MODEL, base_url=OLLAMA_BASE_URL)
 
     embedding = embedding_model.embed_query(description)
 
-    data = {
-        "text": description,
-        "vector": embedding
-    }
+    difficulty_id = vector_store.insert_difficulty(description, embedding)
 
-    response = database.milvus_client.insert(collection_name=DIFFICULTIES_COLLECTION_NAME, data=data)
-
-    id = response["ids"][0]
-
-    return ToolMessage(content=f"Difficulty saved in the database. Id: {id}", tool_call_id="123")
+    return ToolMessage(content=f"Difficulty saved in the database. Id: {difficulty_id}", tool_call_id="123")
 
 @tool
 def retrieve_difficulties():
     """Retrieve the difficulties of the student"""
     print("[X] Retrieve difficulties called")
-    database = VectorDatabase()
-    difficulties = database.milvus_client.query(
-        collection_name=DIFFICULTIES_COLLECTION_NAME,
-        filter="",
-        output_fields=["id", "text"],
-        limit=100
-    )
+    vector_store = VectorStore()
+    difficulties = vector_store.query_difficulties(limit=100)
 
     return difficulties
 
@@ -70,14 +57,14 @@ def generate_study_questions(
 def search_documents(query: Annotated[str, "The topic, concept, or subject that should be searched in the documents"]):
     """Search for relevant documents in the database"""
     print(f"[Tool Call] search_documents(topic={query})")
-    search_engine = VectorialSearch()
-    documents = search_engine.search(query, top_k=6)
-    
+    vector_store = VectorStore()
+    documents = vector_store.search(query, top_k=6)
+
     tool_response = []
     for document in documents:
         piece_id = str(uuid4()).split("-")[0]
         document_json = {
-            "piece_id": piece_id, 
+            "piece_id": piece_id,
             "distance": document["distance"],
             "content": document["text"]
         }

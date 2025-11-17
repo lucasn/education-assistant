@@ -8,7 +8,7 @@ from langgraph.graph import StateGraph, START, END
 from langgraph.checkpoint.postgres import PostgresSaver
 from langgraph.prebuilt import tools_condition
 from prompts import MAIN_MODEL_PROMPT
-from data_processing import VectorialSearch
+from data_processing import VectorStore
 from typing_extensions import TypedDict
 from toolbox import generate_study_questions, search_documents
 
@@ -52,7 +52,7 @@ class ToolNode:
 
 class ProfessorAgent:
     def __init__(self) -> None:
-        self.search_engine = VectorialSearch()
+        self.search_engine = VectorStore()
         
         tools = [generate_study_questions, search_documents]
 

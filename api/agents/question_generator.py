@@ -3,7 +3,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_ollama import ChatOllama
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
-from data_processing import VectorialSearch
+from data_processing import VectorStore
 from prompts import QUESTION_GENERATOR_PROMPT
 from os import getenv
 
@@ -26,7 +26,7 @@ class QuestionGeneratorAgent:
     def __init__(self) -> None:
         self.model = ChatOllama(model=QUESTION_GENERATOR_MODEL, temperature=0.8, base_url=OLLAMA_BASE_URL, reasoning=False) \
             .with_structured_output(QuestionList)
-        self.search_engine = VectorialSearch()
+        self.search_engine = VectorStore()
 
         self.graph_builder = StateGraph(QuestionGeneratorState)
         
