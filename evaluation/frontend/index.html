@@ -264,6 +264,25 @@
 
                         {/* Criteria Evaluations */}
                         <div className="space-y-4 mb-4">
+                            {/* Correctness */}
+                            {test.correctness && (
+                                <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <div className="flex items-center gap-2">
+                                            <span className="text-sm font-semibold text-gray-700">Correctness</span>
+                                        </div>
+                                        <VerdictBadge verdict={test.correctness.verdict} />
+                                    </div>
+
+                                    <div className="bg-white rounded-lg p-3 border border-gray-200">
+                                        <div className="text-sm font-medium text-gray-700 mb-1">Analysis</div>
+                                        <div className="text-sm text-gray-600 leading-relaxed">
+                                            {test.correctness.analysis}
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
+
                             {/* Groundedness */}
                             {test.groundedness && (
                                 <div className="border border-gray-200 rounded-lg p-4 bg-gray-50">
@@ -282,9 +301,6 @@
                                     </div>
                                 </div>
                             )}
-
-                            {/* Placeholder for future criteria */}
-                            {/* You can add more criteria here in the same format */}
                         </div>
 
                         {/* Collapsible Details */}
@@ -373,6 +389,11 @@
 
                 const stats = { good: 0, satisfactory: 0, unsatisfactory: 0 };
                 tests.forEach(test => {
+                    // Count correctness evaluations
+                    if (test.correctness) {
+                        stats[test.correctness.verdict.toLowerCase()]++;
+                    }
+                    // Count groundedness evaluations
                     if (test.groundedness) {
                         stats[test.groundedness.verdict.toLowerCase()]++;
                     }
