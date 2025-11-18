@@ -41,6 +41,9 @@ class Evaluator:
 
         self.print_test(test_run_id, question, answer, context, tool_calls)
 
+        correctness_input = f"QUESTION: {question}\nRESPONSE: {answer}"
+        correctness = self.judge.evaluate_correctness({"input": correctness_input})
+
         groundedness_input = f"QUESTION: {question}\nCONTEXT: {search_documents_content}\nRESPONSE: {answer}"
         groundedness = self.judge.evaluate_groundedness({"input": groundedness_input})
 
@@ -49,7 +52,7 @@ class Evaluator:
             "question": question,
             "answer": answer,
             "search_documents_content": search_documents_content,
-            # "correctness": correctness_result,
+            "correctness": correctness,
             "groundedness": groundedness,
             "timestamp": datetime.now()
         }
