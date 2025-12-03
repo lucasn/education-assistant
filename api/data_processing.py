@@ -177,8 +177,23 @@ class VectorStore:
 
     # Document search methods
     def search(self, query, top_k=3):
-        """Search for documents by query string (embeds the query automatically)"""
+        """Search for documents by query string (embeds the query automatically)
+
+        Args:
+            query: The search query string
+            top_k: Number of results to return
+            evaluation: If True, search only entries with 'evaluation' keyword.
+                       If False, search only entries without any keywords (default: False)
+        """
+        evaluation = bool(int(getenv("EVALUATION", "0")))
+        print(f"Evaluation flag: {evaluation}")
         embedding = self.embedding_model.embed_query(query)
+
+        # Build WHERE clause based on evaluation flag
+        if evaluation:
+            where_clause = "WHERE 'evaluation' = ANY(keywords)"
+        else:
+            where_clause = "WHERE (keywords IS NULL OR keywords = '{}')"
 
         with self.conn.cursor() as cur:
             cur.execute(
@@ -186,6 +201,7 @@ class VectorStore:
                 SELECT id, text, file_id, keywords,
                        1 - (vector <=> %s::vector) as distance
                 FROM {DOCUMENTS_COLLECTION_NAME}
+                {where_clause}
                 ORDER BY vector <=> %s::vector
                 LIMIT %s
                 """,

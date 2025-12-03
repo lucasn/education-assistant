@@ -1,11 +1,13 @@
-from langchain_ollama import ChatOllama
+from langchain_groq import ChatGroq
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import JsonOutputParser
 from pydantic import BaseModel
 from typing import Literal
 from prompts import CORRECTNESS_PROMPT, GROUNDEDNESS_PROMPT
 from os import getenv
+from dotenv import load_dotenv
 
+load_dotenv()
 
 class EvaluationResult(BaseModel):
     analysis: str
@@ -15,21 +17,13 @@ class EvaluationResult(BaseModel):
 class Judge:
     def __init__(
         self,
-        model="qwen3:8b",
-        base_url=getenv("OLLAMA_URL"),
-        temperature=0.0,
-        **kwargs
+        temperature=0.0
     ):
-        self.model_name = model
-        self.base_url = base_url
         self.temperature = temperature
 
-        self.llm = ChatOllama(
-            model=model,
-            base_url=base_url,
-            temperature=temperature,
-            reasoning=True,
-            **kwargs
+        self.llm = ChatGroq(
+            model="openai/gpt-oss-120b",
+            temperature=temperature
         )
 
         # JSON output parser for parsing model's JSON responses

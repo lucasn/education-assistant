@@ -89,7 +89,10 @@ def run_tests(questions, api_url="http://localhost:8080", rabbitmq_host="localho
     rabbitmq_client.connect()
     rabbitmq_client.declare_queue('tests_results', durable=True)
 
-    for question in questions:
+    for question_data in questions:
+        question = question_data.get("question", "")
+        reference_answer = question_data.get("reference_answer")
+
         print(f"Running test for question: {question}")
 
         result = run_test(question, api_url)
@@ -97,6 +100,7 @@ def run_tests(questions, api_url="http://localhost:8080", rabbitmq_host="localho
         test_result = {
             "test_run_id": test_run_id,
             "question": question,
+            "reference_answer": reference_answer,
             "answer": result["answer"],
             "context": result["context"],
             "tool_calls": result["tool_calls"]
@@ -112,9 +116,27 @@ def run_tests(questions, api_url="http://localhost:8080", rabbitmq_host="localho
 
 
 if __name__ == "__main__":
-    test_questions = [
-        "What is the application layer?",
-        "What are the protocols of the application layer?"
-    ]
+    import glob
+    from pathlib import Path
+
+    # Get all JSON files from data folder
+    data_folder = Path(__file__).parent.parent / "data"
+    json_files = glob.glob(str(data_folder / "*.json"))
+
+    test_questions = []
+
+    # Read all JSON files and extract questions
+    for json_file in json_files:
+        with open(json_file, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            questions_data = data.get("questions", [])
+
+            for q in questions_data:
+                test_questions.append({
+                    "question": q.get("question", ""),
+                    "reference_answer": q.get("answer", "")
+                })
+
+    print(f"Loaded {len(test_questions)} questions from {len(json_files)} JSON files")
 
     run_tests(test_questions)
