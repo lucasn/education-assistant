@@ -391,10 +391,12 @@
                 tests.forEach(test => {
                     // Count correctness evaluations
                     if (test.correctness) {
+                        console.log(`Correctness: ${test.correctness.verdict}`)
                         stats[test.correctness.verdict.toLowerCase()]++;
                     }
                     // Count groundedness evaluations
                     if (test.groundedness) {
+                        console.log(`Groundedness: ${test.groundedness.verdict}`)
                         stats[test.groundedness.verdict.toLowerCase()]++;
                     }
                 });

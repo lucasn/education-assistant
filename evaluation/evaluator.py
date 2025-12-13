@@ -33,14 +33,13 @@ class Evaluator:
 
         test_run_id = message.get("test_run_id", "N/A")
         question = message.get("question", "")
-        reference_answer = message.get("reference_answer")
         answer = message.get("answer", "")
         context = message.get("context")
         tool_calls = message.get("tool_calls", [])
 
         search_documents_content = self.extract_search_documents(tool_calls)
 
-        self.print_test(test_run_id, question, answer, reference_answer, context, tool_calls)
+        self.print_test(test_run_id, question, answer, context, tool_calls)
 
         correctness_input = f"QUESTION: {question}\nRESPONSE: {answer}"
         correctness = self.judge.evaluate_correctness({"input": correctness_input})
@@ -51,7 +50,6 @@ class Evaluator:
         evaluation_summary = {
             "test_run_id": test_run_id,
             "question": question,
-            "reference_answer": reference_answer,
             "answer": answer,
             "search_documents_content": search_documents_content,
             "correctness": correctness,
@@ -87,10 +85,9 @@ class Evaluator:
 
         return search_documents_content
 
-    def print_test(self, test_run_id, question, answer, reference_answer, context, tool_calls):
+    def print_test(self, test_run_id, question, answer, context, tool_calls):
         print(f"\nTest Run ID: {test_run_id}")
         print(f"Question: {question}")
-        print(f"Reference Answer: {reference_answer[:100] + '...' if reference_answer and len(reference_answer) > 100 else reference_answer}")
         print(f"Answer: {answer[:100]}..." if len(answer) > 100 else f"Answer: {answer}")
         print(f"Context available: {context is not None}")
         print(f"Tool calls: {len(tool_calls)} - [{[tool_call["name"] for tool_call in tool_calls]}]")

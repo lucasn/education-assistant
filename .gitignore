@@ -2,6 +2,7 @@ questions.txt
 
 # Data
 data/
+test_data/
 database/
 
 .DS_Store

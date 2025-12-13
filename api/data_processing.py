@@ -72,13 +72,16 @@ class FileIngestion:
         # Initialize database tables and indexes
         initialize_vector_database(self.conn)
 
-    def ingest(self, file_bytes, filename):
+    def ingest(self, file_bytes, filename, evaluation=False):
         file_id = str(uuid4())
 
         text = self.extract_text(file_bytes)
         pieces, embeddings = self.embed_text(text)
 
         # Store all chunks with the same file_id and filename
+        keywords = []
+        if evaluation:
+            keywords.append("evaluation")
         with self.conn.cursor() as cur:
             for piece, embedding in zip(pieces, embeddings):
                 cur.execute(
@@ -87,7 +90,7 @@ class FileIngestion:
                     (vector, text, file_id, filename, keywords)
                     VALUES (%s, %s, %s, %s, %s)
                     """,
-                    (embedding, piece, file_id, filename, [])
+                    (embedding, piece, file_id, filename, keywords)
                 )
 
     def extract_text(self, file_bytes):

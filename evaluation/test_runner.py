@@ -89,10 +89,7 @@ def run_tests(questions, api_url="http://localhost:8080", rabbitmq_host="localho
     rabbitmq_client.connect()
     rabbitmq_client.declare_queue('tests_results', durable=True)
 
-    for question_data in questions:
-        question = question_data.get("question", "")
-        reference_answer = question_data.get("reference_answer")
-
+    for question in questions:
         print(f"Running test for question: {question}")
 
         result = run_test(question, api_url)
@@ -100,7 +97,6 @@ def run_tests(questions, api_url="http://localhost:8080", rabbitmq_host="localho
         test_result = {
             "test_run_id": test_run_id,
             "question": question,
-            "reference_answer": reference_answer,
             "answer": result["answer"],
             "context": result["context"],
             "tool_calls": result["tool_calls"]
@@ -116,27 +112,15 @@ def run_tests(questions, api_url="http://localhost:8080", rabbitmq_host="localho
 
 
 if __name__ == "__main__":
-    import glob
-    from pathlib import Path
-
-    # Get all JSON files from data folder
-    data_folder = Path(__file__).parent.parent / "data"
-    json_files = glob.glob(str(data_folder / "*.json"))
-
-    test_questions = []
-
-    # Read all JSON files and extract questions
-    for json_file in json_files:
-        with open(json_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            questions_data = data.get("questions", [])
-
-            for q in questions_data:
-                test_questions.append({
-                    "question": q.get("question", ""),
-                    "reference_answer": q.get("answer", "")
-                })
-
-    print(f"Loaded {len(test_questions)} questions from {len(json_files)} JSON files")
+    test_questions = [
+        'O que é neurodivergência e como ela se diferencia do modelo médico de "deficiência"?',
+        'Quais são os principais tipos de neurodivergência e suas características? Discuta a possibilidade de ocorrência de comorbidades e suas implicações.',
+        'Quais são as barreiras mais comuns enfrentadas por neurodivergentes eu seu dia a dia? Elenque alguns exemplos, de preferência reais, como os registrados em noticiário.',
+        'O que significa o conceito de "Nothing About Us Without Us" (Nada sobre nós sem nós) e por que é um princípio ético fundamental ao se projetar qualquer produto ou serviço para comunidades neurodivergentes?',
+        'Como a patologização de condições neurodivergentes (vê-las apenas como "doenças a serem curadas") impacta a forma como a sociedade enxerga as necessidades e potenciais dessas pessoas?',
+        'Quais são os perigos do ableism (ou capacitismo) no trato com pessoas neurodivergentes? Como podemos identificar e evitar vieses inconscientes que assumem que todos possuem as mesmas condições de atuação em face dos desafios cotidianos?',
+        'A neurodiversidade é frequentemente representada de forma estereotipada na mídia e na cultura popular. Como esses estereótipos podem influenciar negativamente a visão de pessoas neurodivergentes?',
+        'Como podemos, enquanto futuros profissionais, advogar pela inclusão da neurodiversidade, não apenas nos serviços e produtos, mas também nos processos de desenvolvimento e de gestão promovidos em todas as organizações sociais e do mercado produtivo?'
+    ]
 
     run_tests(test_questions)
