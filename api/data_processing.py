@@ -36,24 +36,9 @@ def initialize_vector_database(conn):
             )
         """)
 
-        # Create documents indexes
-        cur.execute(f"""
-            CREATE INDEX IF NOT EXISTS {DOCUMENTS_COLLECTION_NAME}_vector_idx
-            ON {DOCUMENTS_COLLECTION_NAME}
-            USING ivfflat (vector vector_cosine_ops)
-            WITH (lists = 100)
-        """)
-
-        cur.execute(f"""
-            CREATE INDEX IF NOT EXISTS {DOCUMENTS_COLLECTION_NAME}_file_id_idx
-            ON {DOCUMENTS_COLLECTION_NAME} (file_id)
-        """)
-
-        cur.execute(f"""
-            CREATE INDEX IF NOT EXISTS {DOCUMENTS_COLLECTION_NAME}_text_idx
-            ON {DOCUMENTS_COLLECTION_NAME}
-            USING gin(to_tsvector('english', text))
-        """)
+        # All indexes removed for simplicity and accuracy
+        # For small datasets (<10k documents), sequential scans are fast enough
+        # Add indexes back if you need optimization on larger datasets
 
         # Create difficulties table
         cur.execute(f"""
@@ -65,19 +50,8 @@ def initialize_vector_database(conn):
             )
         """)
 
-        # Create difficulties indexes
-        cur.execute(f"""
-            CREATE INDEX IF NOT EXISTS {DIFFICULTIES_COLLECTION_NAME}_vector_idx
-            ON {DIFFICULTIES_COLLECTION_NAME}
-            USING ivfflat (vector vector_cosine_ops)
-            WITH (lists = 100)
-        """)
-
-        cur.execute(f"""
-            CREATE INDEX IF NOT EXISTS {DIFFICULTIES_COLLECTION_NAME}_text_idx
-            ON {DIFFICULTIES_COLLECTION_NAME}
-            USING gin(to_tsvector('english', text))
-        """)
+        # All indexes removed for simplicity and accuracy
+        # For small datasets, sequential scans are fast enough
 
 
 class FileIngestion:
@@ -188,12 +162,12 @@ class VectorStore:
         evaluation = bool(int(getenv("EVALUATION", "0")))
         print(f"Evaluation flag: {evaluation}")
         embedding = self.embedding_model.embed_query(query)
-
+        
         # Build WHERE clause based on evaluation flag
         if evaluation:
             where_clause = "WHERE 'evaluation' = ANY(keywords)"
         else:
-            where_clause = "WHERE (keywords IS NULL OR keywords = '{}')"
+            where_clause = ""
 
         with self.conn.cursor() as cur:
             cur.execute(

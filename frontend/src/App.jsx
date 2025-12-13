@@ -6,9 +6,11 @@ import {
   MessageIcon,
   MenuIcon,
   XIcon,
-  AlertIcon
+  AlertIcon,
+  UploadIcon
 } from './components/icons';
 import { MessageBubble } from './components/MessageBubble';
+import { FileUpload } from './components/FileUpload';
 
 function App() {
   const [conversations, setConversations] = useState([]);
@@ -18,6 +20,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [retrieveConversationsError, setRetrieveConversationsError] = useState(null);
+  const [showUpload, setShowUpload] = useState(false);
   const apiUrl = import.meta.env.VITE_API_URL;
   const messagesEndRef = useRef(null);
 
@@ -44,11 +47,14 @@ function App() {
 
       const data = await response.json();
 
-      if (data.length != 0) {
-        data.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+      // Filter out evaluation test conversations (thread_id starting with "test_")
+      const filteredData = data.filter(conv => !conv.threadId.startsWith('test_'));
+
+      if (filteredData.length != 0) {
+        filteredData.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
       }
 
-      setConversations(data);
+      setConversations(filteredData);
     } catch (error) {
       console.error('Error fetching conversations:', error);
       setRetrieveConversationsError(error.message || 'Failed to load conversation history');
@@ -81,11 +87,13 @@ function App() {
     const newThreadId = self.crypto.randomUUID();
     setCurrentThreadId(newThreadId);
     setMessages([]);
+    setShowUpload(false);
   };
 
   const selectConversation = (threadId) => {
     setCurrentThreadId(threadId);
     fetchConversation(threadId);
+    setShowUpload(false);
   };
 
   const sendMessage = async () => {
@@ -182,13 +190,22 @@ function App() {
   return (
     <div className="flex h-screen bg-gray-900 text-gray-100">
       <div className={`${sidebarOpen ? 'w-64' : 'w-0'} transition-all duration-300 bg-gray-950 border-r border-gray-800 flex flex-col overflow-hidden`}>
-        <div className="p-4 border-b border-gray-800">
+        <div className="p-4 border-b border-gray-800 space-y-2">
           <button
             onClick={createNewConversation}
             className="w-full flex items-center gap-2 px-4 py-3 bg-gray-800 hover:bg-gray-700 rounded-lg transition-colors"
           >
             <PlusIcon />
             <span>New Chat</span>
+          </button>
+          <button
+            onClick={() => setShowUpload(true)}
+            className={`w-full flex items-center gap-2 px-4 py-3 rounded-lg transition-colors ${
+              showUpload ? 'bg-blue-600 hover:bg-blue-700' : 'bg-gray-800 hover:bg-gray-700'
+            }`}
+          >
+            <UploadIcon />
+            <span>Upload Files</span>
           </button>
         </div>
 
@@ -242,61 +259,67 @@ function App() {
           <h1 className="text-xl font-semibold">LLM Professor</h1>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4">
-          {messages.length === 0 ? (
-            <div className="h-full flex items-center justify-center text-gray-500">
-              <div className="text-center">
-                <div className="mx-auto mb-4 opacity-50" style={{ width: '48px', height: '48px' }}>
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-                  </svg>
-                </div>
-                <p className="text-lg">Start a conversation with your LLM Professor</p>
-              </div>
-            </div>
-          ) : (
-            <div className="max-w-3xl mx-auto space-y-6">
-              {messages.map((msg, idx) => (
-                msg.content && <MessageBubble idx={idx} message={msg} />
-              ))}
-              {loading && (
-                <div className="flex gap-4 justify-start">
-                  <div className="bg-gray-800 px-4 py-3 rounded-2xl">
-                    <div className="flex gap-1">
-                      <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                      <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                      <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+        {showUpload ? (
+          <FileUpload apiUrl={apiUrl} />
+        ) : (
+          <>
+            <div className="flex-1 overflow-y-auto p-4">
+              {messages.length === 0 ? (
+                <div className="h-full flex items-center justify-center text-gray-500">
+                  <div className="text-center">
+                    <div className="mx-auto mb-4 opacity-50" style={{ width: '48px', height: '48px' }}>
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+                      </svg>
                     </div>
+                    <p className="text-lg">Start a conversation with your LLM Professor</p>
                   </div>
                 </div>
+              ) : (
+                <div className="max-w-3xl mx-auto space-y-6">
+                  {messages.map((msg, idx) => (
+                    msg.content && <MessageBubble idx={idx} message={msg} />
+                  ))}
+                  {loading && (
+                    <div className="flex gap-4 justify-start">
+                      <div className="bg-gray-800 px-4 py-3 rounded-2xl">
+                        <div className="flex gap-1">
+                          <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                          <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                          <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
               )}
-              <div ref={messagesEndRef} />
             </div>
-          )}
-        </div>
 
-        <div className="border-t border-gray-800 p-4 bg-gray-950">
-          <div className="max-w-3xl mx-auto">
-            <div className="flex gap-2 bg-gray-800 rounded-2xl p-2">
-              <textarea
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                onKeyUp={(e) => handleKeyPress(e, sendMessage)}
-                placeholder="Ask your professor anything..."
-                className="flex-1 bg-transparent px-3 py-2 focus:outline-none resize-none max-h-32"
-                rows="1"
-                disabled={loading}
-              />
-              <button
-                onClick={sendMessage}
-                disabled={loading || !input.trim()}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-xl transition-colors"
-              >
-                <SendIcon />
-              </button>
+            <div className="border-t border-gray-800 p-4 bg-gray-950">
+              <div className="max-w-3xl mx-auto">
+                <div className="flex gap-2 bg-gray-800 rounded-2xl p-2">
+                  <textarea
+                    value={input}
+                    onChange={(e) => setInput(e.target.value)}
+                    onKeyUp={(e) => handleKeyPress(e, sendMessage)}
+                    placeholder="Ask your professor anything..."
+                    className="flex-1 bg-transparent px-3 py-2 focus:outline-none resize-none max-h-32"
+                    rows="1"
+                    disabled={loading}
+                  />
+                  <button
+                    onClick={sendMessage}
+                    disabled={loading || !input.trim()}
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-700 disabled:cursor-not-allowed rounded-xl transition-colors"
+                  >
+                    <SendIcon />
+                  </button>
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
+          </>
+        )}
       </div>
     </div>
   );
