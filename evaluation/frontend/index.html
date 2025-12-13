@@ -392,11 +392,13 @@
                     // Count correctness evaluations
                     if (test.correctness) {
                         console.log(`Correctness: ${test.correctness.verdict}`)
+                        console.log(`Correctness: ${test._id}`)
                         stats[test.correctness.verdict.toLowerCase()]++;
                     }
                     // Count groundedness evaluations
                     if (test.groundedness) {
                         console.log(`Groundedness: ${test.groundedness.verdict}`)
+                        console.log(`Groundedness: ${test._id}`)
                         stats[test.groundedness.verdict.toLowerCase()]++;
                     }
                 });

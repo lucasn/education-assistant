@@ -55,8 +55,14 @@ class ProfessorAgent:
         self.search_engine = VectorStore()
         
         tools = [generate_study_questions, search_documents]
+        self.reasoning = None
+        if PROFESSOR_MODEL == "qwen3:8b":
+            self.reasoning = True
+        else:
+            self.reasoning = False
 
-        self.model = ChatOllama(model=PROFESSOR_MODEL, base_url=OLLAMA_BASE_URL, reasoning=False)
+        print(f"{self.reasoning=}")
+        self.model = ChatOllama(model=PROFESSOR_MODEL, base_url=OLLAMA_BASE_URL, reasoning=self.reasoning)
         self.model = self.model.bind_tools(tools)
 
         self.graph_builder = StateGraph(State)

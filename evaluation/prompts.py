@@ -70,12 +70,15 @@ Provide analysis and verdict: **GOOD**, **SATISFACTORY**, or **UNSATISFACTORY**.
 }}
 ```
 
+You should **absolutely** follow the output format above.
+
 # Important Notes
 
 - Focus on QUESTION-RESPONSE alignment only
 - A response can be relevant even if brief, as long as it addresses the question
 - Conversely, a lengthy response with excessive off-topic information is not relevant
 - Consider whether a student would feel their question was answered
+- The professor is instructed to inform the student if they do not have the answer. If the professor answers that they do not have enough information, **you should evaluate it as GOOD**
 """
 
 GROUNDEDNESS_PROMPT = """
@@ -144,9 +147,12 @@ Provide analysis and verdict: **GOOD**, **SATISFACTORY**, or **UNSATISFACTORY**.
 }}
 ```
 
+You should **absolutely** follow the output format above.
+
 # Important Notes
 
 - Focus on CONTEXT-RESPONSE alignment only
 - Reasonable paraphrasing is acceptable if meaning is preserved
 - Be strict but fair: educational contexts require high accuracy
+- The professor is instructed to inform the student if they do not have the answer. If the professor answers that they do not have enough information, **you should evaluate it as GOOD**
 """
